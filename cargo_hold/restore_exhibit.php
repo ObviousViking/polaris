@@ -1,0 +1,64 @@
+<?php
+// restore_exhibit.php - undoes delete_exhibit.php: clears deleted_at/
+// deleted_by so the exhibit reappears in active views, and logs a RESTORE
+// entry to exhibit_history noting who restored it and when it had been
+// deleted.
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../login.php");
+    exit();
+}
+require_once '../db.php';
+require_once '../includes/integrity.php';
+
+$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$stmt->bind_result($role);
+$stmt->fetch();
+$stmt->close();
+
+if ($role !== 'admin' && $role !== 'super') {
+    header("Location: ../dashboard.php");
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['exhibit_id'])) {
+    header("Location: ../dashboard.php");
+    exit();
+}
+
+$exhibit_id = intval($_POST['exhibit_id']);
+
+$stmt = $conn->prepare("SELECT job_id, deleted_at FROM exhibits WHERE exhibit_id = ?");
+$stmt->bind_param("i", $exhibit_id);
+$stmt->execute();
+$exhibit = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$exhibit) {
+    header("Location: ../dashboard.php");
+    exit();
+}
+$job_id = (int) $exhibit['job_id'];
+
+if ($exhibit['deleted_at'] === null) {
+    header("Location: job.php?job_id=$job_id");
+    exit();
+}
+
+$changedBy = (int) $_SESSION['user_id'];
+$wasDeletedAt = $exhibit['deleted_at'];
+
+$stmt = $conn->prepare("UPDATE exhibits SET deleted_at = NULL, deleted_by = NULL WHERE exhibit_id = ?");
+$stmt->bind_param("i", $exhibit_id);
+$ok = $stmt->execute();
+$stmt->close();
+
+if ($ok) {
+    $changes = json_encode(['restored_from_deleted_at' => $wasDeletedAt]);
+    insert_history_row($conn, 'exhibit_history', $exhibit_id, 'RESTORE', $changedBy, $changes);
+}
+
+header("Location: job.php?job_id=$job_id");
+exit();

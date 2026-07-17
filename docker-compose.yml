@@ -1,0 +1,99 @@
+version: "3.8"
+
+# Full stack: Polaris app + MySQL, wired together with persistent volumes.
+#
+# Usage:
+#   docker compose up -d
+#
+# This pulls the app image from Docker Hub (built by
+# .github/workflows/docker-publish.yml) rather than building it locally, so
+# this one file really is all you need on the host. If you're actively
+# developing and want to build from your local source instead of pulling,
+# swap the app service's `image:` line below for `build: .` and run
+# `docker compose up -d --build`.
+#
+# The app container creates the schema itself on first boot (it ships
+# includes/polaris_create.sql inside the image - see
+# includes/session_bootstrap.php) rather than relying on a host-mounted
+# MySQL init file, which turned out to be a real source of bind-mount
+# permission problems on some hosts. The app connects using the DB_*
+# environment variables below (see db.php) — no browser-based install
+# wizard needed for the schema step. On first visit, since the `users`
+# table is empty, you'll land on setup.php to create the initial superuser
+# and be dropped straight into the dashboard.
+#
+# CHANGE the passwords below before running this anywhere reachable off your
+# own machine. If you change MYSQL_ROOT_PASSWORD, update the healthcheck's
+# -p flag on the db service to match - they're not linked automatically.
+#
+# TODO before deploying to Unraid: remove the db service's `ports:` block
+# below. It's published to the host right now for local MySQL Workbench
+# access during development - fine on this machine, but on Unraid it would
+# make the database reachable from your whole LAN with the placeholder
+# passwords still in place.
+#
+# HISTORY_HMAC_KEY: secret used to HMAC-sign case/exhibit history rows (see
+# includes/integrity.php) - part of what makes that audit trail tamper-
+# evident. Set a real random value via HISTORY_HMAC_KEY in your .env file
+# (e.g. `openssl rand -hex 32`), not the placeholder below. Losing/changing
+# this key breaks verification of everything hashed with the old one, so
+# treat it like any other credential - back it up, don't rotate it lightly.
+#
+# Evidence storage (avatars/exhibit photos/exhibit documents) is bind-mounted
+# to a real host folder rather than a named Docker volume, so it's directly
+# browsable. The host path comes from POLARIS_DATA_PATH in a .env file next
+# to this compose file (see .env.example) - defaults to ./polaris_data if
+# unset. Set this per-host: e.g. C:/polaris_data on Windows/Docker Desktop,
+# /mnt/user/appdata/polaris/data on Unraid.
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: polaris_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: change_me_root
+      MYSQL_DATABASE: polaris
+      MYSQL_USER: polaris_app
+      MYSQL_PASSWORD: change_me_app
+    ports:
+      - "3306:3306"
+    volumes:
+      - polaris_db_data:/var/lib/mysql
+    # log_bin_trust_function_creators: without this, MySQL refuses to let a
+    # non-SUPER user (i.e. polaris_app, not root) create the triggers in
+    # includes/polaris_create.sql, since binary logging is on by default and
+    # a non-deterministic trigger could behave inconsistently under
+    # replication. This isn't a replicated setup, so that risk doesn't apply.
+    command: --default-authentication-plugin=mysql_native_password --log_bin_trust_function_creators=1
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pchange_me_root"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: obviousviking/polaris:latest
+    container_name: polaris_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: polaris_app
+      DB_PASS: change_me_app
+      DB_NAME: polaris
+      # Purely for display (Setup page / Manage Storage Settings) - the
+      # container only ever sees its own mount point, not the host side of
+      # a bind mount, so this is how it learns what to show the user.
+      DATA_HOST_PATH: ${POLARIS_DATA_PATH:-./polaris_data}
+      HISTORY_HMAC_KEY: ${HISTORY_HMAC_KEY:-change_me_hmac_key}
+    ports:
+      - "8080:80"
+    volumes:
+      - ${POLARIS_DATA_PATH:-./polaris_data}:/var/www/polaris-data
+
+volumes:
+  polaris_db_data:

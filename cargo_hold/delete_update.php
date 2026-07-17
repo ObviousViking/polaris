@@ -1,0 +1,75 @@
+<?php
+// delete_update.php
+//
+// Hard delete - unlike exhibits (whose chain-of-custody history is
+// foreign-keyed to the exhibit row, so it can never be hard-deleted), a
+// case update's full content is captured as a CASE_UPDATE_DELETED entry
+// in case_history (ref'd by job_id, not update_id) before the row is
+// removed, so nothing is lost and there's no dangling FK to worry about.
+// No restore - the audit trail lives on in case_history either way.
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../login.php");
+    exit();
+}
+require_once '../db.php';
+require_once '../includes/integrity.php';
+require_once '../includes/deletion_reason.php';
+
+$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$stmt->bind_result($role);
+$stmt->fetch();
+$stmt->close();
+
+if ($role !== 'admin' && $role !== 'super') {
+    header("Location: ../dashboard.php");
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['update_id'])) {
+    header("Location: ../dashboard.php");
+    exit();
+}
+
+$update_id = intval($_POST['update_id']);
+
+$stmt = $conn->prepare("SELECT * FROM case_updates WHERE update_id = ?");
+$stmt->bind_param("i", $update_id);
+$stmt->execute();
+$update = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$update) {
+    header("Location: ../dashboard.php");
+    exit();
+}
+$job_id = (int) $update['job_id'];
+$changedBy = (int) $_SESSION['user_id'];
+
+$reason = require_deletion_reason_or_fail($conn);
+if ($reason === false) {
+    header("Location: job.php?job_id=$job_id&error=reason_required");
+    exit();
+}
+
+// Snapshot before removing the row - this is the only place the deleted
+// content survives, so it has to happen before the DELETE below.
+$changes = json_encode([
+    'Update ID' => $update_id,
+    'Deleted Update' => ['Type' => $update['update_type'], 'Text' => $update['update_text']],
+    'Reason' => $reason,
+]);
+
+$stmt = $conn->prepare("DELETE FROM case_updates WHERE update_id = ?");
+$stmt->bind_param("i", $update_id);
+$ok = $stmt->execute();
+$stmt->close();
+
+if ($ok) {
+    insert_history_row($conn, 'case_history', $job_id, 'CASE_UPDATE_DELETED', $changedBy, $changes);
+}
+
+header("Location: job.php?job_id=$job_id");
+exit();

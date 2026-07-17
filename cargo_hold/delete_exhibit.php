@@ -1,0 +1,120 @@
+<?php
+// delete_exhibit.php
+//
+// Soft-delete only - an exhibit can't be hard-deleted once it has history
+// (which is always true the moment it's booked in, since exhibit_history is
+// append-only and foreign-keyed back to exhibits). This marks the exhibit
+// deleted_at/deleted_by, which hides it from active views (job.php,
+// search_exhibits.php, my_workload.php, book_out_exhibits.php) without
+// touching the row itself, and logs a full before-snapshot to
+// exhibit_history as a DELETE action so the chain-of-custody trail records
+// exactly what existed and who removed it. See restore_exhibit.php to undo.
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../login.php");
+    exit();
+}
+require_once '../db.php';
+require_once '../includes/integrity.php';
+require_once '../includes/deletion_reason.php';
+
+$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+$stmt->bind_param("i", $_SESSION['user_id']);
+$stmt->execute();
+$stmt->bind_result($role);
+$stmt->fetch();
+$stmt->close();
+
+if ($role !== 'admin' && $role !== 'super') {
+    header("Location: ../dashboard.php");
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['exhibit_id'])) {
+    header("Location: ../dashboard.php");
+    exit();
+}
+
+$exhibit_id = intval($_POST['exhibit_id']);
+
+$stmt = $conn->prepare("SELECT * FROM exhibits WHERE exhibit_id = ?");
+$stmt->bind_param("i", $exhibit_id);
+$stmt->execute();
+$exhibit = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$exhibit) {
+    header("Location: ../dashboard.php");
+    exit();
+}
+$job_id = (int) $exhibit['job_id'];
+
+// Already deleted - nothing to do, just bounce back.
+if ($exhibit['deleted_at'] !== null) {
+    header("Location: job.php?job_id=$job_id");
+    exit();
+}
+
+$reason = require_deletion_reason_or_fail($conn);
+if ($reason === false) {
+    header("Location: job.php?job_id=$job_id&error=reason_required");
+    exit();
+}
+
+$changedBy = (int) $_SESSION['user_id'];
+$now = date('Y-m-d H:i:s');
+
+$stmt = $conn->prepare("UPDATE exhibits SET deleted_at = ?, deleted_by = ? WHERE exhibit_id = ?");
+$stmt->bind_param("sii", $now, $changedBy, $exhibit_id);
+$ok = $stmt->execute();
+$stmt->close();
+
+if ($ok) {
+    // Full before-state, not just the ref - "what was there" per the audit
+    // trail requirement. Resolved to names (not exhibit_type_id/location_id/
+    // allocated_to raw IDs), same as the BOOK_IN/UPDATE entries elsewhere in
+    // this table - a DB admin can join on the IDs, but this trail is read by
+    // people first.
+    $typeStmt = $conn->prepare("SELECT type_name FROM exhibit_types WHERE exhibit_type_id = ?");
+    $typeStmt->bind_param("i", $exhibit['exhibit_type_id']);
+    $typeStmt->execute();
+    $typeStmt->bind_result($exhibitTypeName);
+    $typeStmt->fetch();
+    $typeStmt->close();
+
+    $locStmt = $conn->prepare("SELECT location_name FROM exhibit_locations WHERE location_id = ?");
+    $locStmt->bind_param("i", $exhibit['location_id']);
+    $locStmt->execute();
+    $locStmt->bind_result($locationName);
+    $locStmt->fetch();
+    $locStmt->close();
+
+    $allocatedToName = null;
+    if (!empty($exhibit['allocated_to'])) {
+        $userStmt = $conn->prepare("SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = ?");
+        $userStmt->bind_param("i", $exhibit['allocated_to']);
+        $userStmt->execute();
+        $userStmt->bind_result($allocatedToName);
+        $userStmt->fetch();
+        $userStmt->close();
+    }
+
+    $snapshot = [
+        'exhibit_ref' => $exhibit['exhibit_ref'],
+        'item_description' => $exhibit['item_description'],
+        'exhibit_type' => $exhibitTypeName,
+        'bag_number' => $exhibit['bag_number'],
+        'urgency' => $exhibit['urgency'],
+        'status' => $exhibit['status'],
+        'location' => $locationName,
+        'allocated_to' => $allocatedToName,
+        'time_in' => $exhibit['time_in'],
+        'time_out' => $exhibit['time_out'],
+    ];
+
+    $changes = json_encode(['before' => $snapshot, 'reason' => $reason !== '' ? $reason : null]);
+    insert_history_row($conn, 'exhibit_history', $exhibit_id, 'DELETE', $changedBy, $changes);
+}
+
+header("Location: job.php?job_id=$job_id");
+exit();

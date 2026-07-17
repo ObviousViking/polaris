@@ -1,0 +1,121 @@
+/* assets/theme.css
+ *
+ * Central colour palette for the Polaris UI. Every page-level <style>
+ * block used to hardcode its own hex values, so changing "the theme"
+ * meant hunting through 50+ files. This file is the single source of
+ * truth instead - pages reference these custom properties rather than
+ * literal hex codes.
+ *
+ * The :root block below is the dark palette (values were pulled 1:1 from
+ * the pre-refactor styles, so that theme should look pixel-identical to
+ * before). The `[data-theme="light"]` block further down overrides it for
+ * users who pick light in their profile - see user_profile.php and the
+ * `theme` column on `users`. header.php / includes/embedded_header.php
+ * stamp the data-theme attribute onto <html> based on that column.
+ */
+
+:root {
+    /* Backgrounds */
+    --polaris-bg: #1a1a1a;
+    --polaris-bg-alt: #222;
+    --polaris-surface: #2a2a2a;
+    --polaris-surface-alt: #2c2c2c;
+    --polaris-surface-deep: #1e1e1e;
+    --polaris-surface-deepest: #121212;
+    --polaris-panel-alt: #3a3a3a;
+    --polaris-panel-alt-2: #2b2b2b;
+    --polaris-header-bg: #000;
+    --polaris-black-alt: #111;
+    --polaris-divider: #333;
+
+    /* Text */
+    --polaris-text: #fff;
+    --polaris-text-secondary: #ccc;
+    --polaris-text-muted: #999;
+    --polaris-text-dim: #c0c0c0;
+    --polaris-text-faint: #888;
+    --polaris-text-faint-2: #777;
+    --polaris-text-placeholder: #a0a0a0;
+    --polaris-gray-light: #eee;
+    --polaris-gray-light-2: #ddd;
+    --polaris-gray-e0: #e0e0e0;
+
+    /* Borders / buttons */
+    --polaris-border: #444;
+    --polaris-border-hover: #555;
+    --polaris-border-hover-2: #666;
+
+    /* "Light grey" buttons (e.g. cancel/reset actions) - a distinct role from
+     * --polaris-text-dim's text usage elsewhere, since a colour that reads
+     * fine as text doesn't necessarily make a good button fill (and vice
+     * versa). Hover is a fixed bright flash in both themes, not tied to
+     * --polaris-text - these buttons are never the same colour as the page
+     * background, dark or light, so brightening on hover always reads. */
+    --polaris-btn-light-bg: #c0c0c0;
+    --polaris-btn-light-hover: #fff;
+
+    /* Accent (links, primary actions) */
+    --polaris-accent: #007bff;
+    --polaris-accent-hover: #0056b3;
+
+    /* Status - success */
+    --polaris-success-bg: #2e7d32;
+    --polaris-success-text: #c8e6c9;
+    --polaris-success-strong: #4caf50;
+    --polaris-success-strong-hover: #388e3c;
+
+    /* Status - error / danger */
+    --polaris-error-bg: #c62828;
+    --polaris-error-text: #ffcdd2;
+    --polaris-danger: #e53935;
+    --polaris-danger-alt: #ff5555;
+
+    /* Status - warning */
+    --polaris-warning: #f0ad4e;
+
+    /* Alert boxes (lighter inline banners used on a few pages) */
+    --polaris-alert-danger-bg: #f8d7da;
+    --polaris-alert-danger-border: #f5c6cb;
+    --polaris-alert-danger-text: #721c24;
+    --polaris-alert-success-bg: #d4edda;
+    --polaris-alert-success-border: #c3e6cb;
+    --polaris-alert-success-text: #155724;
+}
+
+/* Light theme. Status/alert colours are deliberately left alone - they're
+ * self-contained coloured boxes/badges that read fine on either page
+ * background. --polaris-btn-light-bg/hover are also left alone (see :root)
+ * - that's a fixed light-grey-button-that-brightens-on-hover role, not tied
+ * to the page background either way.
+ */
+[data-theme="light"] {
+    /* Backgrounds */
+    --polaris-bg: #f4f6f9;
+    --polaris-bg-alt: #e9ecef;
+    --polaris-surface: #ffffff;
+    --polaris-surface-alt: #f1f3f5;
+    --polaris-surface-deep: #eef1f4;
+    --polaris-surface-deepest: #1a1a1a;
+    --polaris-panel-alt: #e2e6ea;
+    --polaris-panel-alt-2: #dde1e5;
+    --polaris-header-bg: #ffffff;
+    --polaris-black-alt: #eceff1;
+    --polaris-divider: #e4e7eb;
+
+    /* Text */
+    --polaris-text: #1a1a1a;
+    --polaris-text-secondary: #495057;
+    --polaris-text-muted: #6c757d;
+    --polaris-text-dim: #6c757d;
+    --polaris-text-faint: #6c757d;
+    --polaris-text-faint-2: #868e96;
+    --polaris-text-placeholder: #868e96;
+    --polaris-gray-light: #495057;
+    --polaris-gray-light-2: #6c757d;
+    --polaris-gray-e0: #495057;
+
+    /* Borders / buttons */
+    --polaris-border: #ced4da;
+    --polaris-border-hover: #adb5bd;
+    --polaris-border-hover-2: #868e96;
+}

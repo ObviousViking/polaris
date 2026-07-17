@@ -1,0 +1,11 @@
+# Debug/log artifacts
+captains_log/upload_debug.log
+*.log
+
+# Host-specific settings (e.g. POLARIS_DATA_PATH) - copy .env.example instead
+.env
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
