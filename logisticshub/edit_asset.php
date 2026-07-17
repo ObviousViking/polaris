@@ -27,11 +27,8 @@ if (!$asset) {
     exit();
 }
 
-// header.php must come after both redirect checks above - it's an
-// unconditional include that starts writing HTML output the moment it
-// runs, and once any output has been sent, header("Location: ...") fails
-// silently (this app runs with display_errors=Off, so nothing even shows
-// the warning - the page just fails to redirect).
+// header.php must come after both redirect checks above, since it outputs
+// HTML immediately and would break the redirect otherwise.
 require_once('../header.php');
 
 // Fetch asset types

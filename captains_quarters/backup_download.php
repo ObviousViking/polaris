@@ -1,9 +1,8 @@
 <?php
 // captains_quarters/backup_download.php
 //
-// Builds a full backup (DB dump + all uploaded evidence files) into a temp
-// .tar.gz and streams it straight to the browser - never written under a
-// web-servable path (see includes/backup.php).
+// Builds a full backup (DB dump + uploaded files) into a temp .tar.gz and
+// streams it to the browser - never written under a web-servable path.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");

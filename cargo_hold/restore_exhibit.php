@@ -1,8 +1,6 @@
 <?php
 // restore_exhibit.php - undoes delete_exhibit.php: clears deleted_at/
-// deleted_by so the exhibit reappears in active views, and logs a RESTORE
-// entry to exhibit_history noting who restored it and when it had been
-// deleted.
+// deleted_by and logs a RESTORE entry to exhibit_history.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");

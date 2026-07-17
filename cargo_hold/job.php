@@ -13,18 +13,13 @@ if (!isset($_GET['job_id'])) {
 }
 $job_id = intval($_GET['job_id']);
 
-// Surfaces delete_exhibit.php/delete_update.php's ?error=reason_required
-// redirect - without this, a delete rejected by the "require a reason"
-// setting (System Management -> System Settings) bounced back here with no
-// explanation at all, e.g. if the setting was toggled on in another tab
-// after this page's client-side prompt had already loaded.
+// Surfaces delete_exhibit.php/delete_update.php's ?error=reason_required redirect.
 $pageError = "";
 if (($_GET['error'] ?? '') === 'reason_required') {
     $pageError = "That deletion was not completed - a reason is required (System Management > System Settings > Require a reason for every deletion).";
 }
 
-// Only admins/super may delete or restore exhibits - matches the permission
-// level used for other destructive admin actions (create_user.php, manage_case_types.php, etc).
+// Only admins/super may delete or restore exhibits.
 $roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
 $roleStmt->bind_param("i", $_SESSION['user_id']);
 $roleStmt->execute();
@@ -131,8 +126,7 @@ while ($row = $resultEx->fetch_assoc()) {
 }
 $stmtEx->close();
 
-// Deleted exhibits (admins only) - shown separately below so the chain of
-// custody stays visible without cluttering the normal working list.
+// Deleted exhibits (admins only), shown separately from the working list.
 $deletedExhibits = [];
 if ($canDeleteExhibits) {
     $stmtDel = $conn->prepare("
@@ -612,9 +606,7 @@ include '../header.php';
         return $('<div>').text(str === null || str === undefined ? '' : str).html();
     }
 
-    // update_text is rich HTML from Quill - reading textContent off a
-    // detached element both strips the tags and decodes entities properly
-    // (safer/cleaner than a regex strip for this).
+    // Strips HTML tags and decodes entities from the rich-text update content.
     function stripHtml(html) {
         var tmp = document.createElement('div');
         tmp.innerHTML = html || '';

@@ -112,20 +112,14 @@ $job_row = $job_result->fetch_assoc();
 
 $job_id = $job_row ? $job_row['job_id'] : 0;
 
-// Available processes (for the "Add Process" picker) - active only, an
-// inactive one is still shown on already-filled-in records but shouldn't
-// be offered for new ones (same convention as exhibit_locations).
+// Active processes only for the "Add Process" picker.
 $processTypes = [];
 $ptResult = $conn->query("SELECT id, name FROM process_types WHERE is_active = 1 ORDER BY name");
 while ($row = $ptResult->fetch_assoc()) {
     $processTypes[] = $row;
 }
 
-// Processes recorded against this exhibit AND its sub-exhibits, so they all
-// show up in one tight list here rather than needing to visit each
-// sub-exhibit's own examination page - the Exhibit Ref column says which
-// one each row belongs to. Field values aren't needed for this list view
-// (kept to Edit, to keep the table tight); see manage_exhibit_process.php.
+// Processes recorded against this exhibit AND its sub-exhibits, in one list.
 $exhibitProcesses = [];
 $epStmt = $conn->prepare("
     SELECT ep.id, ep.exhibit_id, pt.name AS process_name, ep.updated_at,

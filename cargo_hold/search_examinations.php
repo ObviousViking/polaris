@@ -1,12 +1,8 @@
 <?php
 // search_examinations.php
 //
-// Advanced search across exhibit examination data - the Process Builder
-// field values and free-text notes filled in via
-// captains_log/manage_exhibit_process.php - rather than just the fixed
-// exhibit columns search_exhibits.php covers. A keyword search here can
-// match, say, an IMEI or device model recorded on a Mobile Phone Triage
-// examination, regardless of which case or exhibit it's attached to.
+// Advanced search across exhibit examination data - Process Builder field
+// values and free-text notes, not just the fixed exhibit columns.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -14,11 +10,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once('../db.php');
 
-// Free-text notes are stored as HTML (Quill rich text - see
-// captains_log/manage_exhibit_process.php), so a raw value can be
-// "<p>Notes with <strong>bold</strong> text</p>". Block-level tags are
-// turned into a space first so words don't run together, then everything
-// else is stripped, leaving plain readable text for the results table.
+// Strips HTML from rich-text notes down to plain readable text.
 function plain_text_preview(?string $html, ?int $maxLen = null): string
 {
     if ($html === null || $html === '') {
@@ -32,8 +24,7 @@ function plain_text_preview(?string $html, ?int $maxLen = null): string
     return $plain;
 }
 
-// Rebuilds the current query string with only "page" swapped, so paging
-// through results never loses the active search filters.
+// Rebuilds the current query string with only "page" swapped.
 function pagination_url(int $targetPage): string
 {
     $params = $_GET;
@@ -53,21 +44,13 @@ $canSeeDeleted = ($currentUserRole === 'admin' || $currentUserRole === 'super');
 
 $keyword       = isset($_GET['keyword']) ? trim($_GET['keyword']) : "";
 $process_type  = isset($_GET['process_type']) ? trim($_GET['process_type']) : "";
-// A LIKE match on the field's label, not an exact field id - one field
-// concept (e.g. "Acquisition Tool") is often defined separately per
-// process type (CCTV NVR Recovery, Memory Card Acquisition, Hard Drive,
-// USB...), each with its own process_fields row. Matching on label text
-// finds all of them in one search instead of requiring one search per
-// process type.
 $field_label   = isset($_GET['field_label']) ? trim($_GET['field_label']) : "";
 $examiner      = isset($_GET['examiner']) ? trim($_GET['examiner']) : "";
 $date_from     = isset($_GET['date_from']) ? trim($_GET['date_from']) : "";
 $date_to       = isset($_GET['date_to']) ? trim($_GET['date_to']) : "";
 $includeDeleted = $canSeeDeleted && isset($_GET['include_deleted']);
 
-// Which submit button was used. "list_all" ignores keyword/field entirely
-// and just lists every examination matching the other filters - a browse
-// mode for when you don't have a specific value to search for.
+// "list_all" ignores keyword/field and just browses everything matching the other filters.
 $mode = isset($_GET['list_all']) ? 'list_all' : (isset($_GET['submit']) ? 'search' : 'none');
 $hasSearched = $mode !== 'none';
 
@@ -79,9 +62,7 @@ if ($page < 1) {
 $totalResults = 0;
 $totalPages = 1;
 
-// Runs $sql (optionally type/param-bound) and returns the executed
-// mysqli_stmt, or null (with $message set) on prepare failure. Shared by
-// both the count query and the page query, in both search branches below.
+// Runs $sql, returns the executed mysqli_stmt, or null (with $message set) on failure.
 function run_bound_query(mysqli $conn, string $sql, string $types, array $params, string &$message)
 {
     $stmt = $conn->prepare($sql);
@@ -100,11 +81,6 @@ function run_bound_query(mysqli $conn, string $sql, string $types, array $params
     return $stmt;
 }
 
-// Whether to include free-text examination notes in the results at all -
-// its own checkbox rather than being implicitly tied to the Specific Field
-// filter, so you can search notes alone, fields alone, or both. Checkboxes
-// send nothing when unchecked, so this only reads as unchecked once a
-// search has actually been submitted without it ticked.
 $includeNotes = $mode === 'none' || isset($_GET['include_notes']);
 
 $results = [];
@@ -183,8 +159,7 @@ if ($mode === 'list_all') {
         }
     }
 } elseif ($mode === 'search') {
-    // Shared filter fragments, applied to both the field-value branch and
-    // the free-text-notes branch below.
+    // Shared filter fragments for both the field-value and free-text-notes branches.
     $commonConditions = [];
     $commonParams = [];
     $commonTypes = "";
@@ -215,14 +190,8 @@ if ($mode === 'list_all') {
 
     $commonWhere = empty($commonConditions) ? "" : (" AND " . implode(" AND ", $commonConditions));
 
-    // Branch 1: structured field values (Process Builder answers). DISTINCT
-    // ep.id - one examination can have several fields whose value matches
-    // the same keyword (e.g. "Manufacturer" and "Model" both containing
-    // "Dell"), and without DISTINCT that examination would produce one row
-    // per matched field instead of one row per examination. Only the id +
-    // ordering column are selected here; full display detail for the
-    // resulting page of ids is fetched separately below, once, so a result
-    // row always corresponds to exactly one examination record.
+    // Branch 1: structured field values. DISTINCT ep.id keeps one examination
+    // to one result row even if several fields match the keyword.
     $fieldConditions = [];
     $fieldParams = [];
     $fieldTypes = "";
@@ -252,11 +221,8 @@ if ($mode === 'list_all') {
     $allParams = array_merge($fieldParams, $commonParams);
     $allTypes = $fieldTypes . $commonTypes;
 
-    // Branch 2: free-text examination notes - controlled by its own
-    // checkbox (Include free-text notes), independent of the Specific
-    // Field filter, which only ever narrows the structured field branch.
-    // Plain UNION (not UNION ALL) so an examination matched by both a
-    // field and its notes still collapses to a single id.
+    // Branch 2: free-text notes. Plain UNION so a match in both branches
+    // still collapses to a single id.
     if ($includeNotes) {
         $notesConditions = [];
         $notesParams = [];
@@ -308,8 +274,6 @@ if ($mode === 'list_all') {
     }
 
     if (!empty($matchedIds)) {
-        // Full display detail for this page's examinations - one row per
-        // id, same order as $matchedIds (already ORDER BY created_at DESC).
         $idPlaceholders = implode(',', array_fill(0, count($matchedIds), '?'));
         $detailSql = "
             SELECT
@@ -339,10 +303,7 @@ if ($mode === 'list_all') {
             $detailStmt->close();
         }
 
-        // Which specific field(s) matched, per examination - scoped to the
-        // same field-match conditions as branch 1 above, so this only
-        // lists fields that actually satisfied the search, not every field
-        // recorded on the examination.
+        // Which specific field(s) matched, per examination.
         $matchedFieldsById = [];
         if (!empty($fieldConditions)) {
             $mfSql = "
@@ -368,9 +329,7 @@ if ($mode === 'list_all') {
             }
             $row = $detailsById[$id];
             $row['matched_fields'] = $matchedFieldsById[$id] ?? [];
-            // Notes-match indicator for display only - the actual filtering
-            // already happened in SQL (branch 2 above); this just decides
-            // whether to show a "Free-text notes" chip on this row.
+            // Display only - whether to show a "Free-text notes" chip on this row.
             $row['notes_matched'] = $includeNotes && !empty($keyword)
                 && stripos(plain_text_preview($row['notes_text']), $keyword) !== false;
             $results[] = $row;

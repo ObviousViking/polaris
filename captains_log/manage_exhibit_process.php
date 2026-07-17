@@ -1,14 +1,9 @@
 <?php
 // manage_exhibit_process.php
 //
-// Fills in (or edits) one examination process against an exhibit or
-// sub-exhibit. exhibit_processes always holds the CURRENT values; every
-// create or edit also writes a full snapshot of what the record looked like
-// at that moment into exhibit_process_history (append-only, same
-// hash/HMAC chain as case_history/exhibit_history/audit_log - see
-// includes/integrity.php). A snapshot rather than a field-by-field diff
-// because the field set is dynamic per process type, defined in
-// manage_processes.php / manage_process_fields.php.
+// Fills in (or edits) one examination process against an exhibit. Every
+// create/edit writes a full snapshot into exhibit_process_history (a
+// snapshot rather than a diff, since fields are dynamic per process type).
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -114,8 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $userId = (int) $_SESSION['user_id'];
 
         if ($isEdit) {
-            // Snapshot the state as it exists RIGHT NOW, before overwriting it -
-            // "copy the record to history, then save the new one" per the design.
+            // Snapshot the state as it exists right now, before overwriting it.
             $oldSnapshot = ['process' => $process_name, 'free_text' => $free_text_value];
             foreach ($fields as $f) {
                 $oldVal = $existingValues[(int) $f['id']] ?? null;

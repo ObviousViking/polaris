@@ -1,22 +1,13 @@
 <?php
 // bin/migrate_case_updates_history.php
 //
-// One-off, run-once-by-hand backfill: copies every row out of
-// case_updates_history (retired - case update history now lives in
-// case_history, alongside job field edits, instead of its own table) into
-// case_history, preserving the original changed_at/changed_by rather than
-// stamping "now". Not part of the includes/migrations/*.sql runner - this
-// moves data with judgement calls (renaming actions, reshaping the JSON),
-// which doesn't fit a plain schema migration.
-//
-// Run from inside the app container, BEFORE the schema migration that
-// drops case_updates_history:
+// One-off backfill: copies rows from the retired case_updates_history table
+// into case_history, preserving original timestamps. Run before the schema
+// migration that drops case_updates_history:
 //
 //   docker exec -it polaris_app php bin/migrate_case_updates_history.php
 //
-// Safe to run more than once - skips case_updates_history rows that already
-// have a matching case_history entry (matched on the embedded "Update ID"
-// + action + original changed_at).
+// Safe to run more than once.
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -46,9 +37,7 @@ $skipped = 0;
 while ($row = $rows->fetch_assoc()) {
     $newAction = $actionMap[$row['action']] ?? $row['action'];
 
-    // Resolve job_id via the still-present case_updates row (soft-delete
-    // never removed it - the schema migration that drops deleted_at/
-    // deleted_by runs after this script).
+    // Resolve job_id via the still-present case_updates row.
     $jobStmt = $conn->prepare("SELECT job_id FROM case_updates WHERE update_id = ?");
     $jobStmt->bind_param("i", $row['update_id']);
     $jobStmt->execute();

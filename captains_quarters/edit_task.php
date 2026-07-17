@@ -58,8 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         "completion_comment = '$completion_comment'"
     ];
 
-    // Tracks what actually changed, for the audit trail - compared against
-    // the row fetched before this update (see $task above).
+    // Tracks what actually changed, for the audit trail.
     $changes = [];
     if ($status !== $task['status']) {
         $changes['status'] = ['from' => $task['status'], 'to' => $status];
@@ -75,11 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $custom_ref = trim($_POST['custom_ref']);
         $description = mysqli_real_escape_string($conn, $_POST['description']);
 
-        // Job ref is free text on this form, not a dropdown - validate it
-        // actually exists and resolve the matching job_id, so the two never
-        // drift apart (job_id is what every "view job" link on this task
-        // actually follows; custom_ref editable-as-text without this check
-        // could silently point them at different jobs).
+        // Job ref is free text - validate it actually exists and resolve job_id.
         $jobLookup = $conn->prepare("SELECT job_id FROM jobs WHERE custom_ref = ? LIMIT 1");
         $jobLookup->bind_param("s", $custom_ref);
         $jobLookup->execute();

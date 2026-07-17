@@ -1,11 +1,8 @@
 <?php
 // includes/embedded_header.php
 //
-// Minimal chrome for a page loaded inside the System Management nav+iframe
-// shell (captains_quarters/cq_dashboard.php) - just enough dark theming to
-// match the site, without re-rendering the full site header/nav (which
-// would otherwise duplicate inside the iframe alongside the outer page's
-// own header/nav).
+// Minimal chrome for pages loaded inside the System Management iframe -
+// just theming, no full site header/nav.
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
@@ -40,9 +37,6 @@ $requireDeletionReason = get_require_deletion_reason($conn);
         color: var(--polaris-text);
     }
 
-    /* Pages that don't define their own layout container rely on this
-       class from header.php, which includes a 100px top margin to clear
-       the site header/nav - not needed here since neither is rendered. */
     .content-wrapper {
         padding: 20px;
         max-width: 1200px;
@@ -76,8 +70,6 @@ $requireDeletionReason = get_require_deletion_reason($conn);
 
 <body>
     <script>
-    // Same reason-required-to-delete UX as header.php - see the comment
-    // there. Server-side enforcement lives in includes/deletion_reason.php.
     window.REQUIRE_DELETION_REASON = <?php echo $requireDeletionReason ? 'true' : 'false'; ?>;
 
     function confirmDeleteWithReason(form, message) {

@@ -1,13 +1,8 @@
 <?php
 // includes/settings.php
 //
-// DB-backed app settings. Storage is a single root data directory (set
-// during first-run setup, changeable later from Case Management -> Manage
-// System Details -> Manage Storage Settings) with fixed subfolders for
-// avatars/exhibit photos/exhibit documents underneath it. The URL prefix
-// is fixed - it's tied to the Apache alias baked into the Docker image
-// (see docker/apache-uploads.conf), not something that's safe to freely
-// retype.
+// DB-backed app settings, keyed off a single root data directory with fixed
+// subfolders (avatars/exhibit photos/exhibit documents/etc) underneath it.
 
 const DATA_ROOT_DEFAULT = '/var/www/polaris-data/';
 const DATA_ROOT_URL = '/polaris_uploads/';
@@ -29,10 +24,7 @@ function get_data_root(mysqli $conn): string
     return rtrim($root, '/\\') . '/';
 }
 
-// The container only ever sees its own mount point (DATA_ROOT_DEFAULT), not
-// the host side of a bind mount - DATA_HOST_PATH (set in docker-compose.yml
-// from POLARIS_DATA_PATH) is how the UI shows something the user actually
-// recognizes instead of an internal container path.
+// Shows the host-side path in the UI instead of the container's internal mount point.
 function get_data_host_path_display(): string
 {
     $hostPath = getenv('DATA_HOST_PATH');
@@ -97,10 +89,7 @@ function save_strategy_due_sla_days(mysqli $conn, int $days): bool
     return $result;
 }
 
-// System Management -> System Settings toggle. When on, every delete
-// action in the app (exhibits, case updates, and the various lookup-table
-// deletes) requires a non-empty reason before it's allowed to proceed - see
-// includes/deletion_reason.php.
+// When on, deletes require a non-empty reason - see includes/deletion_reason.php.
 function get_require_deletion_reason(mysqli $conn): bool
 {
     $required = false;
@@ -136,8 +125,6 @@ function save_require_deletion_reason(mysqli $conn, bool $required): bool
     return $result;
 }
 
-// Kept for the existing call sites (header.php, upload/view pages, profile
-// pages), which expect $config['paths']['avatar_dir_fs'] etc.
 function get_storage_settings(mysqli $conn): array
 {
     $root = get_data_root($conn);
@@ -159,12 +146,7 @@ function get_storage_settings(mysqli $conn): array
     ];
 }
 
-// System Management -> System Settings -> Report Branding. Stores just the
-// stored filename (e.g. "logo_1737000000.png") - combine with
-// $config['paths']['report_logo_dir_fs'/'report_logo_dir_url'] from
-// get_storage_settings() to get the actual path/URL. Uploading a new logo
-// overwrites this and the old file is deleted (see upload_report_logo.php),
-// so there's only ever one on disk at a time.
+// Stored filename only - combine with get_storage_settings()'s report_logo_dir paths.
 function get_report_logo_filename(mysqli $conn): ?string
 {
     $filename = null;

@@ -43,9 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
         $delete_id = intval($_POST['delete_location']);
 
-        // Exhibits still physically at this location block the action
-        // entirely - a booked-out exhibit's location is historical, not
-        // current, so it doesn't block on its own.
+        // Exhibits still physically at this location block the action; booked-out ones don't.
         $checkStmt = $conn->prepare("SELECT COUNT(*) FROM exhibits WHERE location_id = ? AND time_out IS NULL");
         $checkStmt->bind_param("i", $delete_id);
         $checkStmt->execute();
@@ -63,14 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nameStmt->fetch();
             $nameStmt->close();
 
-            // Even a booked-out exhibit still has a foreign key pointing at
-            // this location (book-out only sets time_out, the location on
-            // record doesn't change), and exhibit history is append-only -
-            // so a location with ANY historical exhibit reference can't be
-            // hard-deleted without either violating the FK or destroying
-            // history. Deactivate instead: it drops out of the "book in a
-            // new exhibit" dropdown but stays around so past records still
-            // display correctly, and can be reactivated later.
+            // A location with any historical exhibit reference can't be
+            // hard-deleted, so deactivate instead: drops out of the "book
+            // in" dropdown but past records still display correctly.
             $histStmt = $conn->prepare("SELECT COUNT(*) FROM exhibits WHERE location_id = ?");
             $histStmt->bind_param("i", $delete_id);
             $histStmt->execute();

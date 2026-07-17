@@ -11,9 +11,7 @@ $messagesFile = 'random_messages.txt';
 if (file_exists($messagesFile)) {
     $messages = file($messagesFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     if (!empty($messages)) {
-        // Index off day-of-year and hour so the message changes every hour
-        // (rather than once a day) and resolves the same way for everyone
-        // looking at the dashboard within that hour.
+        // Changes every hour rather than once a day.
         $index = (date("z") * 24 + (int) date("G")) % count($messages);
         $messageOfTheDay = $messages[$index];
     } else {
@@ -23,9 +21,7 @@ if (file_exists($messagesFile)) {
     $messageOfTheDay = "Messages file not found.";
 }
 
-// Generate randomized sparkles - toned down: fewer, dimmer, slower than the
-// original (see .sparkle / @keyframes sparkleAnim below for the other half
-// of this).
+// Generate randomized sparkles.
 $numSparkles = 10;
 $sparklesHTML = "";
 for ($i = 0; $i < $numSparkles; $i++) {

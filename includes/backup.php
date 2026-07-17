@@ -1,28 +1,15 @@
 <?php
 // includes/backup.php
 //
-// Shared plumbing for the full system backup/restore feature (System
-// Management -> System Settings - see captains_quarters/backup_download.php
-// and restore_process.php). A "backup" is a single .tar.gz containing:
-//
-//   database.sql       - a full mysqldump of the polaris database
-//   avatars/            (only if present)
-//   exhibit-photos/      "
-//   exhibit-documents/   "
-//   case-documents/      "
-//
-// Shells out to mysqldump/mysql/tar (via proc_open with an array command -
-// no shell involved, so there's no quoting/injection surface) rather than
-// reimplementing a SQL dumper or archive format in PHP. Credentials are
-// passed via the MYSQL_PWD environment variable, not a command-line flag,
-// so they never show up in `ps`.
+// Shared plumbing for full system backup/restore. A backup is a single
+// .tar.gz with database.sql (mysqldump) plus the uploaded-file folders.
+// Shells out to mysqldump/mysql/tar via proc_open's array form (no shell,
+// no injection surface); DB credentials go through MYSQL_PWD so they don't
+// show up in `ps`.
 
 const BACKUP_DATA_SUBFOLDERS = ['avatars', 'exhibit-photos', 'exhibit-documents', 'case-documents'];
 
-// Runs a command with no shell involved (array form - each element is a
-// literal argv entry, not shell-interpreted), optionally redirecting stdin
-// from a file and stdout to a file. Returns the exit code; stderr is
-// captured and returned for logging (never shown to the browser).
+// Runs a command with no shell involved. Returns exit code + captured stderr.
 function backup_run(array $cmd, array $env = [], ?string $stdinFile = null, ?string $stdoutFile = null): array
 {
     $descriptors = [
@@ -63,8 +50,7 @@ function backup_db_env(): array
     ];
 }
 
-// Recursively deletes a directory - used to clean up temp backup/restore
-// working directories, which may contain a full copy of every uploaded file.
+// Recursively deletes a directory (temp backup/restore working folders).
 function backup_rrmdir(string $dir): void
 {
     if (!is_dir($dir)) {

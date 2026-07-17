@@ -87,19 +87,15 @@ if (!empty($allocated_to)) {
     $params[] = "%$allocated_to%";
 }
 if (!$includeSubExhibits) {
-    // Sub-exhibits (parent_id set) are hidden by default regardless of
-    // other search criteria - a checkbox opts back into seeing them.
+    // Sub-exhibits hidden by default - a checkbox opts back in.
     $conditions[] = "e.parent_id IS NULL";
 }
 if (!$includeDeleted) {
-    // Same pattern for soft-deleted exhibits - hidden by default, admins
-    // can opt back in to see them (e.g. to restore one).
+    // Same for soft-deleted exhibits - admins can opt back in.
     $conditions[] = "e.deleted_at IS NULL";
 }
 
-// Only searched at all if the user actually submitted the form - otherwise
-// this page would load every exhibit in the system on every visit, which
-// gets slow as the exhibit list grows.
+// Only searched if the user actually submitted the form.
 $hasSearched = isset($_GET['submit']);
 
 $exhibits = [];

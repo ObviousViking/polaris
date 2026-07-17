@@ -1,11 +1,8 @@
 <?php
 // view_task_history.php
 //
-// Task change history - reads the audit_log entries create_task.php /
-// edit_task.php already write (entity_type = 'task'), filtered to one
-// task. Not a tamper-evident chain like case_history/exhibit_history (tasks
-// are workflow, not evidence), just the existing admin-activity log scoped
-// down to a single item instead of the site-wide feed in view_logs.php.
+// Task change history - reads the audit_log entries create_task.php/
+// edit_task.php already write, filtered to one task.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -34,8 +31,7 @@ if (!$task) {
     exit();
 }
 
-// Same rule as edit_task.php: admin/super, or the user the task is
-// assigned to.
+// Same rule as edit_task.php: admin/super, or the assigned user.
 if ($role !== 'admin' && $role !== 'super' && (int) $task['assigned_to'] !== (int) $_SESSION['user_id']) {
     header("Location: ../dashboard.php");
     exit();

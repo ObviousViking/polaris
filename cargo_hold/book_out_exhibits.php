@@ -83,10 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
               "&type=out" .
               "&booked_out_to=" . urlencode($bookedOutTo);
 
-                // A JS window.open() here would run from a script on page load
-                // (the response to this POST) rather than synchronously inside a
-                // click handler, which most browsers' popup blockers silently
-                // block. A real link the user clicks always works instead.
+                // A real link avoids popup-blocker issues window.open() would hit here.
                 include('../header.php');
                 ?>
                 <div class="content-wrapper" style="max-width:500px; margin:150px auto 20px; text-align:center;">

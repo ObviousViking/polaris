@@ -1,9 +1,6 @@
 <?php
 // view_process_history.php - full version history for one exhibit process
-// record. Each exhibit_process_history row is a complete snapshot of what
-// the record looked like at that point (see manage_exhibit_process.php),
-// tamper-evident via the same hash/HMAC chain as case_history/
-// exhibit_history/audit_log (includes/integrity.php).
+// record. Each row is a complete snapshot of what the record looked like at that point.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");

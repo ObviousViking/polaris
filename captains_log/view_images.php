@@ -1,9 +1,8 @@
 <?php
 // view_images.php
 //
-// Opened in a new tab from examination.php for browsing
-// an exhibit's photos. Deliberately does NOT include header.php - a small
-// popup doesn't need the full site header/nav/notification-polling script.
+// Opened in a new tab for browsing an exhibit's photos. Deliberately
+// doesn't include header.php - not needed in a popup.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     die("Not authenticated");

@@ -1,16 +1,9 @@
 <?php
 // includes/audit_render.php
 //
-// Shared rendering helpers for audit_log entries - originally lived only in
-// captains_quarters/view_logs.php, extracted here once a second page
-// (captains_quarters/view_task_history.php) needed the same
-// action-badge/detail-diff rendering for a single entity's history instead
-// of the site-wide recent-activity feed.
+// Shared rendering helpers for audit_log entries.
 
-// CREATE/UPDATE/DELETE etc as small coloured pills instead of plain text -
-// the raw table got hard to scan once several action types were mixed
-// together (see manage_locations.php's DEACTIVATE/REACTIVATE, exhibit
-// DELETE/RESTORE).
+// Renders CREATE/UPDATE/DELETE etc as small coloured pills.
 function action_badge(string $action): string
 {
     $classMap = [
@@ -28,14 +21,8 @@ function action_badge(string $action): string
     return '<span class="action-badge ' . $class . '">' . htmlspecialchars($action) . '</span>';
 }
 
-// audit_log.details is JSON. Two shapes show up:
-//  - flat key/value pairs (lookup CRUD, settings) - render inline as
-//    "key: value".
-//  - a field-level diff, ['field' => ['from' => x, 'to' => y]] (see
-//    edit_task.php) - rendered as "field: x -> y".
-// Anything with a nested non-diff value (e.g. the exhibit DELETE snapshot,
-// which embeds the whole pre-delete row) gets tucked into a collapsible
-// block instead of dumping raw JSON inline.
+// Renders audit_log.details JSON as flat "key: value" pairs, field diffs as
+// "field: x -> y", and anything more nested as a collapsible raw block.
 function render_audit_details(?string $json): string
 {
     if ($json === null || $json === '') {

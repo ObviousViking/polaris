@@ -2,11 +2,8 @@
 // captains_quarters/restore_process.php
 //
 // Restores a backup produced by backup_download.php: re-imports the whole
-// database (replacing every table) and replaces the uploaded-files
-// subfolders with what's in the archive. This is destructive and
-// irreversible from inside the app - the confirmation phrase below is the
-// only thing standing between a misclick and losing the current data, so
-// don't relax it.
+// database and replaces the uploaded-files subfolders. Destructive and
+// irreversible from inside the app.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -82,12 +79,8 @@ if ($import['exit_code'] !== 0) {
     fail("Restore failed while importing the database. The existing database was not modified because the import runs in a single pass - check the server log for details.");
 }
 
-// Database is now fully replaced, including `settings` (which may have a
-// different data_root_dir than before) - re-read it before touching files.
-// $extractDir (under sys_get_temp_dir()) and the data root are on different
-// filesystems (the latter is a Docker volume mount) - rename() fails across
-// that boundary ("Invalid cross-device link"), so this shells out to `cp`
-// instead, which copies across filesystems natively.
+// Re-read data_root_dir since the DB was just replaced. Uses `cp` instead
+// of rename() since the temp dir and data root are on different filesystems.
 $dataRoot = rtrim(get_data_root($conn), '/');
 foreach (BACKUP_DATA_SUBFOLDERS as $sub) {
     $extractedSub = $extractDir . '/' . $sub;
@@ -104,15 +97,9 @@ foreach (BACKUP_DATA_SUBFOLDERS as $sub) {
 
 backup_rrmdir($extractDir);
 
-// audit_log/log_audit_event itself now points at the freshly-restored
-// table, so this records "a restore happened" as the first entry of the
-// restored chain rather than trying to preserve the old one.
 log_audit_event($conn, 'backup', null, 'RESTORE', (int) $_SESSION['user_id'], json_encode(['filename' => $origName]));
 
-// The `sessions` table was just replaced along with everything else, so the
-// current session row is gone (or belongs to a different snapshot in time)
-// either way - end it cleanly and send the admin back to log in fresh
-// rather than continuing on a session the DB no longer recognizes.
+// sessions was just replaced too, so end this one cleanly and log in fresh.
 session_destroy();
 header("Location: ../login.php?restored=1");
 exit();

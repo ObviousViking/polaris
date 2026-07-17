@@ -1,10 +1,7 @@
 <?php
 // reports.php
 //
-// Draft v1 of System Reports - a handful of operational KPIs pulled
-// directly from the existing schema rather than a report-builder. Expand
-// with more tiles/breakdowns as it becomes clear which numbers people
-// actually check day to day.
+// System Reports - operational KPIs pulled directly from the schema.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -43,10 +40,8 @@ function scalar(mysqli $conn, string $sql)
 }
 
 // --- KPI tiles ---
-// "Overdue"/"Due soon" use strategy_due/strategy_complete (see manage_sla.php)
-// rather than job_status, since status names are a free-text lookup table an
-// org can rename - these two datetime columns are the only fixed, always-
-// present SLA signal.
+// "Overdue"/"Due soon" use strategy_due/strategy_complete rather than
+// job_status, since status names are a free-text lookup table.
 $totalCases = (int) scalar($conn, "SELECT COUNT(*) FROM jobs");
 $overdueCases = (int) scalar($conn, "SELECT COUNT(*) FROM jobs WHERE strategy_complete IS NULL AND strategy_due < NOW()");
 $dueSoonCases = (int) scalar($conn, "SELECT COUNT(*) FROM jobs WHERE strategy_complete IS NULL AND strategy_due BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)");
@@ -70,8 +65,7 @@ if ($result) {
     }
 }
 
-// --- Exhibit status breakdown (includes sub-exhibits - this is total
-// workload, not the case-view listing that hides them) ---
+// --- Exhibit status breakdown (includes sub-exhibits) ---
 $exhibitStatusRows = [];
 $result = $conn->query("
     SELECT COALESCE(status, 'Unknown') AS label, COUNT(*) AS c
@@ -87,9 +81,7 @@ if ($result) {
 }
 
 // --- Workload by analyst (open exhibits + open tasks per user) ---
-// on_hold_exhibits is a subset of open_exhibits, called out separately
-// since a stalled exhibit is worth a manager's attention differently than
-// one that's just in normal progress.
+// on_hold_exhibits is a subset of open_exhibits, called out separately.
 $workloadRows = [];
 $result = $conn->query("
     SELECT u.id, CONCAT(u.first_name, ' ', u.last_name) AS name,
@@ -107,8 +99,7 @@ if ($result) {
     }
 }
 
-// --- Throughput, last 6 months (zero-filled so a quiet month still shows
-// as a bar rather than silently vanishing from the trend) ---
+// --- Throughput, last 6 months (zero-filled so quiet months still show) ---
 function last_n_months(int $n): array
 {
     $months = [];
@@ -151,8 +142,7 @@ $exhibitsPerMonth = zero_fill_month_counts($conn, "
     GROUP BY ym
 ", $monthLabels);
 
-// Single blue hue for all magnitude bars (sequential, not categorical - these
-// charts each show one series), plain HTML bars sized as a % of the row max.
+// Plain HTML bars sized as a % of the row max.
 function render_bar_rows(array $rows, string $labelKey, string $valueKey): string
 {
     if (empty($rows)) {

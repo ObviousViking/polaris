@@ -25,9 +25,7 @@ $conditions = [];
 $typesStr   = "";
 $params     = [];
 
-// Only searched at all if the user actually submitted the form - otherwise
-// this page would load every case in the system on every visit, which gets
-// slow as the case list grows.
+// Only searched if the user actually submitted the form.
 $hasSearched = isset($_GET['submit']);
 
 // Build conditions based on provided search criteria.
@@ -42,8 +40,7 @@ if (!empty($case_type)) {
     $params[] = intval($case_type);
 }
 if (!empty($created_by)) {
-    // jobs.created_by stores the creating user's ID (as text), not their
-    // name, so this has to match against the joined users table instead.
+    // jobs.created_by stores an ID, so match against the joined users table.
     $conditions[] = "CONCAT(u.first_name, ' ', u.last_name) LIKE ?";
     $typesStr .= "s";
     $params[] = "%" . $created_by . "%";
@@ -54,8 +51,7 @@ if (!empty($oic)) {
     $params[] = "%" . $oic . "%";
 }
 if (!empty($operation)) {
-    // jobs.operation stores an operation_id, so this needs an exact match
-    // against the ID from the dropdown, not a LIKE against free text.
+    // jobs.operation stores an ID, so this is an exact match, not a LIKE.
     $conditions[] = "j.operation = ?";
     $typesStr .= "i";
     $params[] = intval($operation);

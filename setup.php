@@ -4,26 +4,20 @@ session_start();
 require_once 'db.php';
 require_once 'includes/settings.php';
 
-// This page only ever creates the FIRST user. If any user already exists, the
-// application is already installed — refuse to run again (this used to be a
-// permanently-open, unauthenticated "create admin" endpoint).
+// Only ever creates the first user. Refuses to run again once one exists.
 $existing = $conn->query("SELECT COUNT(*) AS total FROM users");
 if ($existing && ($row = $existing->fetch_assoc()) && (int)$row['total'] > 0) {
     header("Location: login.php");
     exit();
 }
 
-// If db.php didn't die() before reaching this line, the connection above
-// already succeeded - this is just for display.
+// If db.php didn't die() before this, the connection already succeeded.
 $db_status_ok = true;
 $db_host_display = getenv('DB_HOST') . ':' . (getenv('DB_PORT') ?: '3306');
 $db_name_display = getenv('DB_NAME');
 $db_user_display = getenv('DB_USER');
 
-// Pre-filled with the Docker image's mounted data volume - just accept it
-// as-is unless you've changed the volume mount in docker-compose.yml.
-// Editable later from Case Management -> Manage System Details -> Manage
-// Storage Settings regardless.
+// Pre-filled with the mounted data volume; editable later from Storage Settings.
 $data_root = get_data_root($conn);
 $data_host_display = get_data_host_path_display();
 
@@ -35,8 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $data_root  = trim($_POST['data_root'] ?? '') ?: $data_root;
 }
 
-// Checked on every load (including after a POST, since data_root may have
-// just changed) so the status shown always matches what's about to be saved.
+// Re-checked on every load so the status shown always matches what's about to be saved.
 $data_root_exists = is_dir($data_root);
 if (!$data_root_exists) {
     @mkdir($data_root, 0775, true);

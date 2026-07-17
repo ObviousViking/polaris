@@ -1,36 +1,18 @@
 <?php
 // includes/document_preview.php
 //
-// Local, offline "screenshot each page" rendering for the Case Report
-// appendix (see cargo_hold/case_report.php and case_report_previews.php) -
-// an attached document is embedded as an image of what it actually looks
-// like, rather than reflowed plain text pulled out of it. Everything here
-// runs entirely inside the app container with no network access at request
-// time:
-//  - .pdf goes straight through pdftoppm (poppler-utils, apt-installed).
-//  - .docx and .txt are first normalized to PDF via LibreOffice headless
-//    (`soffice --headless --convert-to pdf`, libreoffice-writer, also
-//    apt-installed), then rendered through the same pdftoppm step - one
-//    uniform pipeline for every supported type instead of a different
-//    renderer per format.
-// Both poppler-utils and libreoffice-writer are plain system packages
-// baked into the image at build time (see Dockerfile), so nothing here
-// ever needs the container to have network access at runtime.
+// Renders attached documents as page images for the Case Report appendix.
+// PDFs go through pdftoppm; DOCX/TXT are converted to PDF via LibreOffice
+// headless first, then through the same pdftoppm step. Everything runs
+// locally with no network access at request time.
 
 const EMBEDDABLE_EXTENSIONS = ['txt', 'pdf', 'docx'];
 
-// A report shouldn't be able to balloon to hundreds of pages just because
-// someone ticked the appendix box on a long document - and each page is a
-// full raster image, so this also bounds how slow rendering one document
-// (and how large the resulting report page) can get.
+// Caps how many pages get rendered per document.
 const APPENDIX_MAX_PAGES = 10;
 const APPENDIX_IMAGE_DPI = 110;
 
-// Rendered page-images are cached on the persisted data volume, keyed off
-// each source document's own path/size/mtime - a document only needs to be
-// run through LibreOffice/pdftoppm once; every later report view (or
-// checkbox toggle) for the same unchanged document is a disk read instead
-// of a fresh conversion.
+// Rendered page images are cached here, keyed by source file path/size/mtime.
 const PREVIEW_CACHE_DIR = '/var/www/polaris-data/report-cache';
 
 function is_embeddable_extension(string $filename): bool
@@ -39,11 +21,8 @@ function is_embeddable_extension(string $filename): bool
     return in_array($ext, EMBEDDABLE_EXTENSIONS, true);
 }
 
-// Single-document convenience wrapper around render_document_page_images_batch().
-// Returns ['images' => [data-uri, ...], 'total_pages' => int, 'truncated' => bool]
-// on success, or null if the file type isn't supported, the file is
-// missing, or rendering failed for any reason. Never throws - one bad or
-// unsupported document shouldn't break the whole report.
+// Single-document wrapper around render_document_page_images_batch(). Returns
+// ['images' => [...], 'total_pages' => int, 'truncated' => bool] or null.
 function render_document_page_images(string $filePath, string $originalFilename): ?array
 {
     $result = render_document_page_images_batch([
@@ -52,16 +31,8 @@ function render_document_page_images(string $filePath, string $originalFilename)
     return $result['_single'];
 }
 
-// Renders (or reuses a cached rendering of) page-images for several
-// documents at once. $items is [key => ['file_path' => ..., 'original_filename' => ...]].
-// Returns [key => result-array-or-null] using the same per-item shape as
-// render_document_page_images().
-//
-// Cache hits resolve immediately with no subprocess work at all. Cache
-// misses are converted concurrently rather than one at a time - each
-// document's LibreOffice/pdftoppm work is entirely independent of the
-// others, so a case with several attached documents pays roughly the cost
-// of its single slowest document instead of the sum of all of them.
+// Renders page images for several documents at once (or reuses cached
+// ones). Cache misses convert concurrently instead of one at a time.
 function render_document_page_images_batch(array $items): array
 {
     $results = [];
@@ -106,10 +77,7 @@ function render_document_page_images_batch(array $items): array
         @mkdir($profileDir, 0700, true);
         @mkdir($cacheDir, 0700, true);
 
-        // www-data's real $HOME isn't writable in this image, which makes
-        // soffice's dconf/fontconfig caches log permission warnings on
-        // every call (harmless, but wasteful) - pointing HOME at this
-        // item's own temp dir gives those subsystems somewhere writable.
+        // Give soffice a writable HOME to avoid dconf/fontconfig cache warnings.
         $env = array_merge(getenv() ?: [], [
             'HOME' => $cacheDir,
             'XDG_CACHE_HOME' => $cacheDir,
@@ -182,9 +150,6 @@ function preview_cache_key(string $filePath): ?string
     if ($stat === false) {
         return null;
     }
-    // mtime+size in the key means a re-uploaded/replaced document at the
-    // same path is automatically treated as a cache miss - no explicit
-    // invalidation needed.
     return sha1($filePath . '|' . $stat['mtime'] . '|' . $stat['size']);
 }
 
@@ -234,11 +199,8 @@ function run_process(string $cmd, int $timeoutSeconds = 20, ?array $env = null):
     return $results['_single'];
 }
 
-// Runs several shell commands concurrently and waits for all of them.
-// $commands is [key => ['cmd' => string, 'env' => array|null]]. Returns
-// [key => bool success]. A single shared timeout applies to the whole
-// batch (not per-command), since these are always run together as one
-// logical unit of work.
+// Runs several shell commands concurrently. $commands is [key => ['cmd' =>
+// string, 'env' => array|null]]. Returns [key => bool success].
 function run_processes_parallel(array $commands, int $timeoutSeconds): array
 {
     $procs = [];
@@ -254,10 +216,7 @@ function run_processes_parallel(array $commands, int $timeoutSeconds): array
         }
     }
 
-    // proc_get_status()'s exitcode is only meaningful the first call after
-    // a given process exits - it must be captured right here, since
-    // proc_close() below would otherwise report -1 (already consumed)
-    // instead of the real exit code.
+    // exitcode is only valid on the first proc_get_status() call after exit.
     $results = [];
     $start = time();
     while (count($results) < count($procs) && (time() - $start) < $timeoutSeconds) {

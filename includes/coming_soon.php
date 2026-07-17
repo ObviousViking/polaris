@@ -1,15 +1,10 @@
 <?php
 // includes/coming_soon.php
 //
-// Shared placeholder for dashboard links that point at a real, planned
-// feature that just isn't built yet - so visiting one shows a clear "not
-// built yet" page instead of a raw 404 or a blank file.
+// Shared placeholder page for planned-but-unbuilt features.
 
 function render_coming_soon(string $title, string $description, string $backHref, string $backLabel): void
 {
-    // When loaded inside the System Management nav+iframe shell, the nav on
-    // the left already covers "go back" - a back link here would just
-    // reload the whole shell inside itself.
     $embedded = isset($_GET['embedded']);
     ?>
 <div class="content-wrapper">

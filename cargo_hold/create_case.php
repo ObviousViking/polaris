@@ -102,12 +102,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO jobs 
             (custom_ref, created_by, initial_summary, oic, operation, customer_id, lead_force_id, suspect, fingerprints, dna, status_id, malware, strategy_set, strategy_due, case_type_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        // Parameter types for 15 parameters:
-        // custom_ref: s, created_by: i, initial_summary: s, oic: s,
-        // operation: i, customer_id: i, lead_force_id: i, suspect: s,
-        // fingerprints: i, dna: i, status_id: i, malware: i, strategy_set: s,
-        // strategy_due: s, case_type_id: i
-        // => "sissiiisiiiissi"
+        // Types: custom_ref, created_by, initial_summary, oic, operation, customer_id,
+        // lead_force_id, suspect, fingerprints, dna, status_id, malware, strategy_set,
+        // strategy_due, case_type_id
         $typeString = "sissiiisiiiissi";
         $stmt->bind_param($typeString, 
             $next_ref,
@@ -306,8 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label>Operation (required, default is Operation 1)</label>
                         <select name="operation" required>
                             <?php 
-                        // If no operation selected, default to id 1.
-                        // We'll display all operations, but mark the one with id 1 as selected.
+                        // Default to operation id 1 if none selected.
                         ?>
                             <?php foreach ($operations as $op): ?>
                             <option value="<?php echo $op['operation_id']; ?>"

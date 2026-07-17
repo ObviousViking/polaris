@@ -17,9 +17,7 @@ if ($embedded) {
 $user_result = mysqli_query($conn, "SELECT id, first_name, last_name FROM users WHERE is_active = 1");
 $user_filter = isset($_GET['user_id']) ? intval($_GET['user_id']) : '';
 
-// Allowlist, not just an "else concatenate whatever was in the query
-// string" fallback - $_GET['status'] used to go straight into the SQL
-// string unescaped (a real SQL injection, e.g. ?status=x' OR '1'='1).
+// Allowlist - $_GET['status'] must never be concatenated into SQL unescaped.
 $validStatuses = ['not_started', 'in_progress', 'completed'];
 $rawStatus = isset($_GET['status']) ? $_GET['status'] : 'not_completed';
 $status_filter = ($rawStatus === 'all' || $rawStatus === 'not_completed' || in_array($rawStatus, $validStatuses, true))

@@ -84,9 +84,7 @@ $customers   = getLookupData($conn, "SELECT customer_id, name FROM customers ORD
 
 $message = "";
 
-// Case history is read by people, not just the DB admin - stores names, not
-// raw foreign keys, so "Status: Old: 4 New: 6" doesn't show up in the audit
-// trail. $rows is one of the getLookupData() results above.
+// Stores names, not raw foreign keys, so the audit trail is readable.
 function lookupName(array $rows, string $idCol, string $nameCol, $id): ?string
 {
     if ($id === null || $id === '') {
@@ -100,10 +98,8 @@ function lookupName(array $rows, string $idCol, string $nameCol, $id): ?string
     return null;
 }
 
-// datetime-local inputs submit '' when left blank, and MySQL's strict mode
-// (the default) rejects '' as a datetime value outright rather than storing
-// NULL - had to be converted explicitly. They also use 'T' as the date/time
-// separator, which MySQL doesn't accept in a DATETIME string.
+// datetime-local inputs submit '' (needs NULL) and use 'T' as the separator
+// (MySQL needs a space), so both need converting.
 function normalizeDatetimeLocal($value) {
     $value = trim((string) $value);
     if ($value === '') {
@@ -176,8 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             "new" => lookupName($jobStatuses, 'status_id', 'status_name', $new_status),
         ];
     }
-    // Compares normalized values so that setting OR clearing a date both
-    // count as a change - not just changing one non-empty date to another.
+    // Compares normalized values so setting or clearing a date both count as a change.
     $trackDatetimeChange = function ($label, $old, $new) use (&$changes) {
         $oldNorm = !empty($old) ? date('Y-m-d H:i', strtotime($old)) : null;
         $newNorm = !empty($new) ? date('Y-m-d H:i', strtotime($new)) : null;

@@ -1,24 +1,10 @@
 <?php
 // includes/achievements.php
 //
-// Achievement catalog + unlock logic for the User Profile achievements
-// panel. Two tables (see includes/migrations/004_achievements.sql and
-// polaris_create.sql):
-//
-//   achievements       - the fixed catalog (definitions), synced from
-//                         ACHIEVEMENT_DEFINITIONS below on every request
-//                         (cheap once caught up - see sync_achievement_catalog()).
-//   user_achievements  - which user unlocked which achievement, and when.
-//
-// Security: nothing anywhere lets a client request "unlock achievement X".
-// check_and_unlock() is the ONLY way a row is written to user_achievements,
-// and it always recomputes the real metric count from the source tables
-// itself (compute_metric() below) rather than trusting a count passed in by
-// its caller - so calling it early, calling it twice, or calling it for the
-// wrong reason can never unlock something the user hasn't actually earned.
-// It's called from the handful of write sites where progress can change
-// (create_case.php, add_exhibit.php, etc.), each passing only a metric name
-// and a user id - never a count or a "this one's earned" flag.
+// Achievement catalog + unlock logic for the User Profile achievements panel.
+// check_and_unlock_achievements() always recomputes the metric from source
+// tables rather than trusting a passed-in count, so it can't be tricked into
+// unlocking something the user hasn't actually earned.
 
 const ACHIEVEMENT_DEFINITIONS = [
     ['key' => 'first_login', 'name' => 'First Login', 'description' => 'Logged in for the first time.', 'icon' => '🔑', 'metric' => 'first_login', 'threshold' => 1, 'sort_order' => 1],
@@ -39,15 +25,13 @@ const ACHIEVEMENT_DEFINITIONS = [
     ['key' => 'one_year_on', 'name' => 'One Year On', 'description' => 'Account active for 365 days.', 'icon' => '🎉', 'metric' => 'tenure_days', 'threshold' => 365, 'sort_order' => 16],
 ];
 
-// Called once per request from includes/session_bootstrap.php, right after
-// migrations run. Cheap fast path (one COUNT query) once the catalog is
-// caught up, same philosophy as run_pending_migrations().
+// Syncs the achievements table from ACHIEVEMENT_DEFINITIONS; no-op once caught up.
 function sync_achievement_catalog(mysqli $conn): void
 {
     $expected = count(ACHIEVEMENT_DEFINITIONS);
     $result = @$conn->query("SELECT COUNT(*) AS c FROM achievements");
     if (!$result) {
-        return; // table doesn't exist yet - migration hasn't run on this boot
+        return; // table doesn't exist yet
     }
     $row = $result->fetch_assoc();
     if ((int) $row['c'] === $expected) {
@@ -70,22 +54,15 @@ function sync_achievement_catalog(mysqli $conn): void
     $stmt->close();
 }
 
-// The one and only source of truth for "how far has this user actually
-// gotten" on a given metric - always a fresh query against the real data,
-// never a cached/passed-in value.
+// Fresh query against the real data for a given metric - never cached/passed-in.
 function compute_metric(mysqli $conn, string $metric, int $userId): int
 {
     switch ($metric) {
         case 'first_login':
-            // No login-history table to recompute against - this metric is
-            // only ever evaluated from the login-success code path itself
-            // (login_process.php, after password_verify() succeeds), so
-            // reaching this call at all already proves the condition.
             return 1;
 
         case 'cases_created':
-            // jobs.created_by is a varchar column (stores the user id as
-            // text) - see includes/polaris_create.sql.
+            // jobs.created_by is stored as a varchar.
             $stmt = $conn->prepare("SELECT COUNT(*) FROM jobs WHERE created_by = ?");
             $userIdStr = (string) $userId;
             $stmt->bind_param("s", $userIdStr);
@@ -155,9 +132,7 @@ function compute_metric(mysqli $conn, string $metric, int $userId): int
     return (int) $count;
 }
 
-// Call after any write that could move a metric forward. Cheap when there's
-// nothing left to unlock for that metric (one query, no rows -> returns
-// immediately without ever computing the metric).
+// Call after any write that could move a metric forward.
 function check_and_unlock_achievements(mysqli $conn, int $userId, string $metric): array
 {
     $stmt = $conn->prepare("
@@ -199,8 +174,7 @@ function check_and_unlock_achievements(mysqli $conn, int $userId, string $metric
     return $newlyUnlocked;
 }
 
-// For user_profile.php - every achievement in catalog order, with unlocked
-// state/date joined in for this user.
+// Every achievement in catalog order, with this user's unlocked state/date.
 function get_achievements_for_user(mysqli $conn, int $userId): array
 {
     $stmt = $conn->prepare("

@@ -44,11 +44,7 @@ while ($row = $histResult->fetch_assoc()) {
 }
 $histQuery->close();
 
-// Rich-text fields (e.g. a case update's Text) store HTML from the Quill
-// editor - block-level tags become newlines first so multi-paragraph/list
-// content doesn't run together as one wall of text, then tags are
-// stripped, since this is a plain-text audit trail, not a rich-text
-// viewer.
+// Converts rich-text HTML fields to plain text for this audit trail.
 function history_plain_text($value)
 {
     if ($value === null) {
@@ -62,11 +58,8 @@ function history_plain_text($value)
     return trim(strip_tags($str));
 }
 
-// Flattens a changes JSON blob (old/new pairs, one level of nested
-// snapshot wrapper, or plain scalars - see add_update.php/edit_job.php/
-// delete_update.php) into a flat list of {field, old, new} rows for a
-// simple two/three-column table. "Update ID" and similar raw-ID fields are
-// dropped - they don't help a reader, only a DB admin.
+// Flattens a changes JSON blob into a flat list of {field, old, new} rows.
+// Raw-ID fields like "Update ID" are dropped - they don't help a reader.
 function flatten_history_changes(array $data, array &$rows = []): array
 {
     foreach ($data as $field => $value) {

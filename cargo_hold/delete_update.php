@@ -1,12 +1,8 @@
 <?php
 // delete_update.php
 //
-// Hard delete - unlike exhibits (whose chain-of-custody history is
-// foreign-keyed to the exhibit row, so it can never be hard-deleted), a
-// case update's full content is captured as a CASE_UPDATE_DELETED entry
-// in case_history (ref'd by job_id, not update_id) before the row is
-// removed, so nothing is lost and there's no dangling FK to worry about.
-// No restore - the audit trail lives on in case_history either way.
+// Hard delete. The full content is captured as a CASE_UPDATE_DELETED entry
+// in case_history before the row is removed, so nothing is lost. No restore.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -54,8 +50,7 @@ if ($reason === false) {
     exit();
 }
 
-// Snapshot before removing the row - this is the only place the deleted
-// content survives, so it has to happen before the DELETE below.
+// Snapshot before removing the row - the only place the deleted content survives.
 $changes = json_encode([
     'Update ID' => $update_id,
     'Deleted Update' => ['Type' => $update['update_type'], 'Text' => $update['update_text']],

@@ -1,21 +1,9 @@
 <?php
 // upload_photos_popup.php
 //
-// Small popup window (opened via window.open() from examination.php) for dragging
-// exhibit photos onto Dropzone.js - self-hosted at /assets/dropzone/, no
-// CDN, so this keeps working fully offline/airgapped. Deliberately does NOT
-// include header.php - that used to load the full site header/nav/
-// notification-polling script inside a small popup, which was wrong on its
-// own, but for the AJAX upload POST below it was actively harmful: that
-// unconditional include's ~200 lines of HTML output ran before this file's
-// JSON response was written, and this file also used to override the
-// site-wide `display_errors = Off` (see docker/php-overrides.ini) with a
-// leftover debug `ini_set('display_errors', 1)` - so any stray PHP notice
-// (e.g. header.php's own session handling) got printed straight into the
-// response body too. Dropzone couldn't parse the result as JSON, so it
-// reported an upload failure even when the upload had fully succeeded - the
-// file was already moved and inserted into exhibit_photos by that point;
-// only the client's confirmation was broken.
+// Small popup for dragging exhibit photos onto Dropzone.js (self-hosted,
+// no CDN). Deliberately doesn't include header.php - its HTML output would
+// pollute the JSON response this file writes for the AJAX upload.
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -31,8 +19,7 @@ if (!$man_no || $exhibit_id <= 0) {
     die("Not authenticated or invalid exhibit.");
 }
 
-// Handle the AJAX upload request first, before any HTML is output, so the
-// JSON response can never be polluted by page markup or a leaked notice.
+// Handle the AJAX upload request first, before any HTML is output.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
     header('Content-Type: application/json');
 

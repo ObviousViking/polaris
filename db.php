@@ -1,12 +1,8 @@
 <?php
 // db.php
 //
-// DB connection comes entirely from environment variables - this app only
-// runs in Docker (see docker-compose.yml).
-
-// includes/session_bootstrap.php (auto-prepended, see docker/php-overrides.ini)
-// has already opened a connection for the session handler - reuse it
-// instead of opening a second one.
+// DB connection from environment variables. Reuses session_bootstrap.php's
+// connection if one is already open, instead of opening a second one.
 if (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof mysqli) {
     $conn = $GLOBALS['conn'];
 } else {

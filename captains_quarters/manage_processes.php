@@ -1,8 +1,6 @@
 <?php
 // manage_processes.php - "Process Builder": define named examination
-// processes (e.g. "Mobile Phone Extraction") that show up as an option when
-// filling in an exhibit's examination record. Field definitions for each
-// process live in manage_process_fields.php.
+// processes. Field definitions for each live in manage_process_fields.php.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -56,8 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $nameStmt->fetch();
             $nameStmt->close();
 
-            // Safe to remove the field definitions too - nothing references
-            // them yet if nothing referenced the process type itself.
+            // Safe to remove the field definitions too.
             $delFields = $conn->prepare("DELETE FROM process_fields WHERE process_type_id = ?");
             $delFields->bind_param("i", $delete_id);
             $delFields->execute();

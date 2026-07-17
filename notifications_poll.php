@@ -1,10 +1,8 @@
 <?php
 // notifications_poll.php
 //
-// Lightweight JSON endpoint polled by header.php's toast notifications -
-// returns this user's currently-unread notifications. Polling only reads
-// (never marks anything read); the toast UI tracks which IDs it's already
-// shown client-side, so the same notification doesn't pop up on every poll.
+// JSON endpoint polled by header.php's toast notifications - returns this
+// user's currently-unread notifications.
 session_start();
 header('Content-Type: application/json');
 

@@ -1,14 +1,8 @@
 <?php
 // delete_exhibit.php
 //
-// Soft-delete only - an exhibit can't be hard-deleted once it has history
-// (which is always true the moment it's booked in, since exhibit_history is
-// append-only and foreign-keyed back to exhibits). This marks the exhibit
-// deleted_at/deleted_by, which hides it from active views (job.php,
-// search_exhibits.php, my_workload.php, book_out_exhibits.php) without
-// touching the row itself, and logs a full before-snapshot to
-// exhibit_history as a DELETE action so the chain-of-custody trail records
-// exactly what existed and who removed it. See restore_exhibit.php to undo.
+// Soft-delete only - marks deleted_at/deleted_by and logs a before-snapshot
+// to exhibit_history. See restore_exhibit.php to undo.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -70,11 +64,7 @@ $ok = $stmt->execute();
 $stmt->close();
 
 if ($ok) {
-    // Full before-state, not just the ref - "what was there" per the audit
-    // trail requirement. Resolved to names (not exhibit_type_id/location_id/
-    // allocated_to raw IDs), same as the BOOK_IN/UPDATE entries elsewhere in
-    // this table - a DB admin can join on the IDs, but this trail is read by
-    // people first.
+    // Full before-state resolved to names, matching the BOOK_IN/UPDATE entries.
     $typeStmt = $conn->prepare("SELECT type_name FROM exhibit_types WHERE exhibit_type_id = ?");
     $typeStmt->bind_param("i", $exhibit['exhibit_type_id']);
     $typeStmt->execute();

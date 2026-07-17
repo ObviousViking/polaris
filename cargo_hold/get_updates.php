@@ -15,9 +15,7 @@ if (!isset($_GET['job_id'])) {
 
 $job_id = intval($_GET['job_id']);
 
-// Deletes are hard deletes (see delete_update.php) - the deleted content
-// lives on as a CASE_UPDATE_DELETED entry in case_history instead, so
-// there's no deleted_at flag to filter here.
+// Deletes are hard deletes (see delete_update.php) - no deleted_at flag to filter here.
 $stmt = $conn->prepare("SELECT cu.update_id, u.first_name, u.last_name, cu.update_type, cu.update_date,
                                 cu.update_text, cu.updated_at,
                                 CONCAT(uu.first_name, ' ', uu.last_name) AS updated_by_name

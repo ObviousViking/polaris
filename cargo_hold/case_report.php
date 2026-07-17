@@ -1,14 +1,8 @@
 <?php
 // cargo_hold/case_report.php
 //
-// Case Report Builder - a printable summary of a case, built entirely
-// client-side once the page has loaded: every exhibit/update/document this
-// job has is rendered into the page up front (hidden or shown), and the
-// left-panel checkboxes just toggle visibility via JS (updateReport()
-// below) - no AJAX round trips, so the preview on the right updates
-// instantly as options change. "Print" is the browser's own Print / Save
-// as PDF, keeping this dependency-free (see the airgap note on PDF/DOCX
-// embedding below).
+// Case Report Builder - printable case summary. Checkboxes toggle visibility
+// client-side (updateReport()); appendix images load lazily on demand.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -52,9 +46,7 @@ if (!$job) {
     exit();
 }
 
-// All exhibits for this job (main + sub together) - grouped into a
-// parent_id => [children] map in PHP, so the report can nest sub-exhibits
-// under their parent regardless of fetch order.
+// All exhibits, grouped into a parent_id => [children] map.
 $exhibits = [];
 $exhibitsByParent = [];
 $stmt = $conn->prepare("
@@ -80,8 +72,7 @@ $stmt->close();
 $mainExhibitIds = $exhibitsByParent[0] ?? [];
 $allExhibitIds = array_keys($exhibits);
 
-// Examination data (Process Builder field values + free-text notes) per
-// exhibit - same shape as captains_log/examination.php's own fetch.
+// Examination data (Process Builder field values + free-text notes) per exhibit.
 $processesByExhibit = [];
 if (!empty($allExhibitIds)) {
     $placeholders = implode(',', array_fill(0, count($allExhibitIds), '?'));
@@ -178,8 +169,7 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
-// Case-level documents (Manage Documents on the case view) - independent
-// of exhibit selection, so tracked separately from $documentsByExhibit.
+// Case-level documents, tracked separately from $documentsByExhibit.
 $caseDocuments = [];
 $stmt = $conn->prepare("SELECT id, original_filename, file_path FROM case_documents WHERE job_id = ? ORDER BY uploaded_at ASC");
 $stmt->bind_param("i", $job_id);
@@ -191,13 +181,8 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
-// Appendix page-images are the slow part of building a report (each
-// PDF/DOCX/TXT goes through pdftoppm, and DOCX/TXT through a LibreOffice
-// conversion first) - and the appendix checkbox is off by default, so this
-// page never runs that conversion itself. Instead it just lists which
-// documents are embeddable; case_report_previews.php renders and caches
-// the actual page-images on demand, fetched by JS only once a user turns
-// the appendix on (see loadAppendixPreviews() below).
+// Just lists which documents are embeddable - case_report_previews.php
+// renders and caches the actual page images on demand (see loadAppendixPreviews()).
 $appendixManifest = [];
 foreach ($documentsByExhibit as $exId => $docs) {
     foreach ($docs as $doc) {
@@ -227,9 +212,6 @@ foreach ($caseDocuments as $doc) {
 include '../header.php';
 ?>
 <style>
-    /* header.php's own body{} already sets margin/background/color/font-family
-       page-wide - scoped to .builder instead, which already clears the
-       fixed header via its margin-top. */
     .builder {
         display: flex;
         max-width: 1700px;
@@ -638,15 +620,7 @@ include '../header.php';
         }
 
         .report-section-title {
-            /* No forced page-break-before here - a hard break on every
-               section regardless of how much room is left is what was
-               producing near-blank pages (a title alone at the top of a
-               fresh page, then its content bumped to the page after that
-               because the block below has page-break-inside/before rules
-               of its own). page-break-after:avoid is enough: it keeps a
-               title glued to whatever follows it, so if they can't both
-               fit on the current page, the break happens before the title
-               instead of after it - no more orphaned headings. */
+            /* Keeps a title glued to whatever follows it - avoids orphaned headings. */
             page-break-after: avoid;
         }
 
@@ -654,13 +628,7 @@ include '../header.php';
             page-break-before: avoid;
         }
 
-        /* Unlike other section titles, the appendix is a distinct chapter
-           of the report (embedded documents, not report data) - it always
-           starts on its own fresh page rather than flowing onto whatever
-           space is left after Case Documents, same idea as a chapter
-           break. Each individual document inside it (.appendix-item) also
-           forces its own fresh page, so the title page stays a clean
-           divider with nothing squeezed underneath it. */
+        /* Appendix is its own chapter - always starts on a fresh page. */
         #report-appendix-section {
             page-break-before: always;
         }
@@ -1002,11 +970,8 @@ function stopAppendixMessageRotation() {
     }
 }
 
-// The appendix checkbox is off by default and converting documents into
-// page images is the slow part of building a report, so this is only
-// fetched the first time a user actually turns the appendix on - not on
-// every page load - and the result is kept so toggling it off and back on
-// doesn't refetch.
+// Fetched only the first time the appendix is turned on; result is kept so
+// toggling it off and back on doesn't refetch.
 function loadAppendixPreviews() {
     if (appendixLoaded || appendixLoading) {
         return;
@@ -1108,10 +1073,7 @@ function updateReport() {
         var scope = block.getAttribute('data-scope');
         var visible;
         if (scope === 'case') {
-            // Independent of the "Case documents (list)" checkbox, same as
-            // exhibit appendix items don't depend on "Attached documents
-            // (list)" - the appendix and the plain filename lists are
-            // separate things, each controlled by its own checkbox only.
+            // Independent of the "Case documents (list)" checkbox.
             visible = appendixOn;
         } else {
             var exId = block.getAttribute('data-exhibit-id');

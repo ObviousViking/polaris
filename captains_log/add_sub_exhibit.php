@@ -71,11 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $types_result = $conn->query("SELECT exhibit_type_id, type_name FROM exhibit_types ORDER BY type_name ASC");
 $exhibit_types = $types_result->fetch_all(MYSQLI_ASSOC);
 
-// header.php must come after the POST-handling block above - it's an
-// unconditional include that starts writing HTML output the moment it
-// runs, and once any output has been sent, header("Location: ...") fails
-// silently (this app runs with display_errors=Off, so nothing even shows
-// the warning - the page just fails to redirect and shows a blank shell).
+// header.php must come after the POST-handling block above, since it
+// outputs HTML immediately and would break the redirect otherwise.
 include '../header.php';
 ?>
 

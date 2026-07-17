@@ -1,14 +1,9 @@
 <?php
 // includes/process_lookups.php
 //
-// The fixed set of sources a Process Builder "lookup" field can pull its
-// dropdown options from (see process_fields.lookup_source). Deliberately a
-// small hardcoded list with a fixed query each, rather than letting an
-// admin point a field at an arbitrary table/column - that would mean
-// interpolating admin-supplied identifiers into SQL, which is a real
-// injection risk even from a trusted admin (typos, copy-paste mistakes, or
-// a compromised admin account). Add a new source here (a new array entry)
-// when a new field needs one - it's a code change, not a schema one.
+// Fixed set of sources a Process Builder "lookup" field can pull options
+// from. Hardcoded rather than admin-configurable, to avoid interpolating
+// admin-supplied table/column names into SQL.
 
 const PROCESS_FIELD_LOOKUP_SOURCES = [
     'assets' => [

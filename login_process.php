@@ -8,8 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
-// --- Rate Limiting Setup ---
-// We'll track the number of failed login attempts in the session.
+// --- Rate limiting: track failed login attempts in the session. ---
 if (!isset($_SESSION['failed_login_attempts'])) {
     $_SESSION['failed_login_attempts'] = 0;
 }

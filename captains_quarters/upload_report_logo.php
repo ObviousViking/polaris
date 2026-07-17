@@ -1,9 +1,7 @@
 <?php
 // captains_quarters/upload_report_logo.php
 //
-// Admin-only handler for System Settings -> Report Branding. Stores a
-// single logo image (overwriting/removing any previous one) used to
-// letterhead the printable Case Report (cargo_hold/case_report.php).
+// Admin-only handler for the Report Branding logo used on the printable Case Report.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");

@@ -1,8 +1,6 @@
 <?php
-// manage_process_fields.php - the fields belonging to one process type (see
-// manage_processes.php). Each field becomes an input on
-// captains_log/manage_exhibit_process.php when someone attaches this
-// process to an exhibit.
+// manage_process_fields.php - the fields belonging to one process type.
+// Each field becomes an input on captains_log/manage_exhibit_process.php.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");

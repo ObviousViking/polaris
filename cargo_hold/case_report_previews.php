@@ -1,14 +1,9 @@
 <?php
 // cargo_hold/case_report_previews.php
 //
-// Lazy AJAX companion to case_report.php. Rendering an embeddable document
-// into page-images (LibreOffice + pdftoppm) is the slow part of building a
-// report, and the appendix checkbox on that page is off by default - so
-// this is only called once a user actually turns the appendix on, rather
-// than blocking the report's initial page load for every visit regardless
-// of whether anyone looks at the appendix. Document identity (job_id ->
-// its exhibits/case documents) is re-derived server-side rather than
-// trusting any client-supplied file paths.
+// Lazy AJAX companion to case_report.php - renders appendix page images on
+// demand. Document identity is re-derived from job_id server-side rather
+// than trusting client-supplied file paths.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);

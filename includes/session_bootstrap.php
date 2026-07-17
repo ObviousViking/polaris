@@ -1,16 +1,10 @@
 <?php
 // includes/session_bootstrap.php
 //
-// Auto-prepended to every request (see docker/php-overrides.ini ->
-// auto_prepend_file), so this runs, and registers the DB-backed session
-// handler, BEFORE any page's own session_start() call. Registering a
-// custom handler after session_start() has already fired has no effect,
-// hence the auto-prepend rather than a plain require somewhere mid-page.
+// Auto-prepended to every request (see docker/php-overrides.ini) so the
+// DB-backed session handler is registered before any page's session_start().
 
-// PHP 8.1+ defaults mysqli to throwing exceptions on error. This file (and
-// the rest of the app) expects the older "check the return value" style
-// (===false, ->connect_error, etc.), so restore that globally, before any
-// mysqli connection is made.
+// Restore the classic "check the return value" mysqli style.
 mysqli_report(MYSQLI_REPORT_OFF);
 
 $db_host = getenv('DB_HOST');
@@ -25,12 +19,8 @@ if (!empty($db_host) && !empty($db_name)) {
     if ($conn && !$conn->connect_error) {
         $GLOBALS['conn'] = $conn;
 
-        // Bootstrap the schema on first boot. The schema ships inside the
-        // image itself (includes/polaris_create.sql) rather than relying on
-        // a host-mounted MySQL init file - that hit real bind-mount
-        // permission issues in practice. GET_LOCK + a double-checked
-        // re-query guards against two requests racing to import at once
-        // right after the container starts.
+        // Bootstrap the schema on first boot. Locked to avoid two requests
+        // racing to import at once right after the container starts.
         $freshInstall = false;
         if (@$conn->query("SELECT 1 FROM settings LIMIT 1") === false) {
             $lockResult = $conn->query("SELECT GET_LOCK('polaris_schema_init', 10) AS got");
@@ -40,13 +30,8 @@ if (!empty($db_host) && !empty($db_name)) {
                 if (@$conn->query("SELECT 1 FROM settings LIMIT 1") === false) {
                     $schema = @file_get_contents(__DIR__ . '/polaris_create.sql');
                     if ($schema !== false && $conn->multi_query($schema)) {
-                        // multi_query() only reports the FIRST statement's
-                        // failure - a later one in the batch can fail
-                        // silently unless each iteration's error is checked
-                        // explicitly, which is exactly what happened here
-                        // once (trigger creation blocked by binlog/SUPER
-                        // privilege - see docker-compose.yml). Logged loudly
-                        // rather than silently leaving a half-built schema.
+                        // Check every statement's result - multi_query() only
+                        // reports the first failure otherwise.
                         do {
                             if ($result = $conn->store_result()) {
                                 $result->free();
@@ -64,16 +49,10 @@ if (!empty($db_host) && !empty($db_name)) {
             }
         }
 
-        // Additive-only schema migrations for changes shipped after initial
-        // install - see includes/migrate.php. A fresh install already has
-        // the current shape from polaris_create.sql above, so its migration
-        // history is just marked as applied rather than replayed.
+        // Additive-only schema migrations for changes since initial install.
         require_once __DIR__ . '/migrate.php';
         run_pending_migrations($conn, $freshInstall);
 
-        // Keeps the achievements catalog (a fixed list defined in code) in
-        // sync with the achievements table - cheap once caught up, same
-        // philosophy as run_pending_migrations() above.
         require_once __DIR__ . '/achievements.php';
         sync_achievement_catalog($conn);
 

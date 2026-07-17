@@ -30,9 +30,7 @@ while ($row = $result->fetch_assoc()) {
 }
 $result->free();
 
-// Fetch lookup data for exhibit locations (active only - a new exhibit
-// shouldn't be booked into a retired location; edit_exhibit.php still shows
-// inactive ones so already-booked exhibits display correctly)
+// Active locations only - edit_exhibit.php still shows inactive ones too.
 $locations = [];
 $result = $conn->query("SELECT location_id, location_name FROM exhibit_locations WHERE is_active = 1 ORDER BY location_name");
 while ($row = $result->fetch_assoc()) {
@@ -197,11 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $receiptURL = "exhibit_receipt.php?ids=" . urlencode($idsStr) .
                         "&job_id=" . urlencode($job_id) .
                         "&type=in";
-            // A JS window.open() here would be called from a script running on
-            // page load (the response to this POST) rather than synchronously
-            // inside a click handler, which most browsers' popup blockers
-            // silently block - no error, it just doesn't happen. A real link
-            // the user clicks always works instead.
+            // A real link avoids popup-blocker issues that window.open() would hit here.
             include '../header.php';
             ?>
             <div class="content-wrapper" style="max-width:500px; margin:150px auto 20px; text-align:center;">

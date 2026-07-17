@@ -1,13 +1,9 @@
 <?php
 // cargo_hold/case_report_zip.php
 //
-// Companion download for case_report.php - bundles the original files
-// (not the report itself) for whatever's currently selected in the report
-// builder's exhibit picker, so the ZIP always matches what the report is
-// scoped to rather than dumping every attachment on the case regardless of
-// selection. Exhibit/document identity is re-derived and re-validated
-// against job_id server-side rather than trusting the requested ID list on
-// its own.
+// Downloads the original attachments for whatever's selected in the Case
+// Report builder, as a ZIP. Exhibit/document IDs are re-validated against
+// job_id server-side rather than trusted as given.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -37,8 +33,7 @@ if (empty($requestedIds)) {
     die("No exhibits selected.");
 }
 
-// Confirm every requested id actually belongs to this job (and isn't
-// deleted) before trusting it for anything below.
+// Confirm every requested id actually belongs to this job.
 $placeholders = implode(',', array_fill(0, count($requestedIds), '?'));
 $stmt = $conn->prepare("SELECT exhibit_id, exhibit_ref FROM exhibits WHERE job_id = ? AND deleted_at IS NULL AND exhibit_id IN ($placeholders)");
 $types = 'i' . str_repeat('i', count($requestedIds));
@@ -57,8 +52,7 @@ if (empty($exhibitRefs)) {
 
 $exhibitIds = array_keys($exhibitRefs);
 
-// Sub-exhibits can themselves have sub-exhibits, so this expands the set
-// one generation at a time until a pass finds nothing new.
+// Expands the set one generation of sub-exhibits at a time.
 if ($includeSub) {
     $frontier = $exhibitIds;
     while (!empty($frontier)) {

@@ -1,10 +1,7 @@
 <?php
 // edit_exported_item.php
 //
-// Was linked from job.php's Exported Items table (and now my_workload.php's
-// Allocated Extractions section) but never actually existed - both links
-// 404'd. Mirrors edit_task.php's shape: same permission rule (admin/super,
-// or the user it's assigned to), same audit-logged update pattern.
+// Mirrors edit_task.php's shape: same permission rule, same audit-logged update pattern.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -33,8 +30,7 @@ if (!$item) {
     exit();
 }
 
-// Only an admin/super user, or the user this extraction is assigned to,
-// may edit it - same rule as edit_task.php.
+// Only an admin/super user, or the assigned user, may edit it.
 if ($role !== 'admin' && $role !== 'super' && (int) $item['assigned_to'] !== (int) $_SESSION['user_id']) {
     echo '<p style="color: var(--polaris-danger);">You do not have permission to edit this item.</p>';
     exit();

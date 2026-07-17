@@ -1,13 +1,9 @@
 <?php
 // bin/reset_password.php
 //
-// CLI-only password reset for when you're locked out of every account (or
-// just forgot one). Run from inside the app container:
+// CLI-only password reset. Run from inside the app container:
 //
 //   docker exec -it polaris_app php bin/reset_password.php user@example.com 'NewPassword123!'
-//
-// Deliberately not reachable over HTTP - see docker/apache-hardening.conf,
-// which denies all requests under /bin/, plus the PHP_SAPI check below.
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);

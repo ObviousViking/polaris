@@ -1,30 +1,16 @@
 <?php
 // includes/audit.php
 //
-// Tamper-evident "who changed what, when" log for admin/config mutations
-// that sit outside the case/exhibit history chains (see
-// includes/integrity.php - those exist for legal chain-of-custody over
-// cases/exhibits specifically). Lookup tables (case types, exhibit types,
-// locations, forces, operations, customers, case statuses), users, tasks,
-// assets, and system settings (SLA, storage path) had no trail before this.
-//
-// audit_log uses the same two-layer hash/HMAC chain as case_history and
-// exhibit_history (see includes/polaris_create.sql for the trigger that
-// computes prev_hash/row_hash, and includes/integrity.php's
-// verify_history_chain(), which audit_log is registered under too - so
-// Check Database Integrity verifies all three chains). It doesn't reuse
-// insert_history_row() because its column set (entity_type + entity_id
-// instead of a single ref column) doesn't fit that function's signature.
+// Tamper-evident audit log for admin/config changes (lookup tables, users,
+// tasks, assets, settings) - same hash/HMAC chain as case_history and
+// exhibit_history (see includes/integrity.php), but its own insert function
+// since its columns (entity_type + entity_id) don't fit insert_history_row().
 
 function log_audit_event(mysqli $conn, string $entityType, ?int $entityId, string $action, int $changedBy, ?string $details = null): bool
 {
     $changedAt = date('Y-m-d H:i:s');
     $secret = getenv('HISTORY_HMAC_KEY') ?: '';
 
-    // Mirrors insert_history_row()'s locking in includes/integrity.php - the
-    // HMAC needs a read-then-write round trip in PHP (unlike the trigger's
-    // hash chain, which is atomic), so two concurrent inserts could
-    // otherwise both read the same "previous" hmac_hash.
     $lockName = 'polaris_history_hmac_audit_log';
     $lockResult = $conn->query("SELECT GET_LOCK('" . $conn->real_escape_string($lockName) . "', 5) AS got");
     $gotLock = $lockResult && ($lockRow = $lockResult->fetch_assoc()) && (int) $lockRow['got'] === 1;

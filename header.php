@@ -204,10 +204,7 @@ $unread_count = $notif_row['unread'];
     </nav>
 
     <script>
-    // System Management -> System Settings -> "Require a reason for
-    // deletions". This is UX only - the actual enforcement is server-side
-    // (see includes/deletion_reason.php), so skipping/scripting around this
-    // prompt can't unlock a delete that would otherwise be rejected.
+    // UX only - actual enforcement is server-side (includes/deletion_reason.php).
     window.REQUIRE_DELETION_REASON = <?php echo $requireDeletionReason ? 'true' : 'false'; ?>;
 
     function confirmDeleteWithReason(form, message) {

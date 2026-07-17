@@ -1,12 +1,8 @@
 <?php
 // upload_documents.php
 //
-// Small popup window (opened via window.open() from examination.php) for uploading
-// exhibit documents. Deliberately does NOT include header.php - a small
-// popup doesn't need the full site header/nav/notification-polling script,
-// and (see upload_photos_popup.php for the fuller version of this story)
-// loading it unconditionally is actively risky for any page that also
-// writes a raw response.
+// Small popup for uploading exhibit documents. Deliberately doesn't include
+// header.php - not needed in a popup, and risky for a page writing a raw response.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");

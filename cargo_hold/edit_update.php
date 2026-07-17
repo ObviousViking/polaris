@@ -1,10 +1,7 @@
 <?php
 // edit_update.php - edits an existing case update. Any logged-in user may
-// edit (matching the app-wide convention that only deletion is admin/super-
-// restricted - see delete_update.php). Logs an old/new diff into
-// case_history (the same combined per-case timeline job field edits use)
-// as a CASE_UPDATE_EDITED action, tamper-evident via the same hash/HMAC
-// chain (includes/integrity.php).
+// edit (only deletion is admin/super-restricted). Logs an old/new diff into
+// case_history as a CASE_UPDATE_EDITED action.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -43,9 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $user_id = (int) $_SESSION['user_id'];
         $now = date('Y-m-d H:i:s');
 
-        // Old/new diff, same shape edit_job.php uses for field edits - so
-        // view_case_history.php's generic renderer shows a proper before/
-        // after box rather than a flat dump.
+        // Old/new diff, same shape edit_job.php uses for field edits.
         $changes = json_encode([
             'Update ID' => $update_id,
             'Type' => ['old' => $update['update_type'], 'new' => $update_type],

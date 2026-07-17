@@ -32,7 +32,6 @@ if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] == UPLOAD_ERR_OK) {
         $avatar_filename = 'avatar_' . $user_id . '.' . $ext;
         
         // Delete any previous avatar file for this user.
-        // This will remove any file that starts with "avatar_{user_id}." in the avatar folder.
         foreach (glob($avatar_dir_fs . 'avatar_' . $user_id . '.*') as $existingFile) {
             // Avoid deleting the default avatar if it exists in the same folder
             if (basename($existingFile) !== 'default_avatar.png') {

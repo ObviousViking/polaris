@@ -2,24 +2,14 @@
 // bin/seed_test_data.php
 //
 // CLI-only test data generator - populates a realistic spread of cases,
-// exhibits, process templates, tasks, assets, and history/audit trail
-// entries. Run from inside the app container:
+// exhibits, process templates, tasks, assets, and history/audit entries.
+// Run from inside the app container:
 //
 //   docker exec -it polaris_app php bin/seed_test_data.php
 //
-// Deliberately not reachable over HTTP - see docker/apache-hardening.conf,
-// which denies all requests under /bin/, plus the PHP_SAPI check below.
-//
-// Uses the app's own insert_history_row()/log_audit_event() helpers (not
-// raw INSERTs) so the tamper-evident hash/HMAC chains on case_history,
-// exhibit_history, exhibit_process_history, and audit_log stay valid -
-// Check Database Integrity will pass over this data exactly like real
-// data entered through the UI.
-//
-// Case refs follow the app's real YY + 3-digit-sequence format (see
-// cargo_hold/create_case.php) - this script reads the current max per
-// year and continues from there, so re-running it is safe (just adds
-// more cases) rather than colliding with existing refs.
+// Uses the app's own insert_history_row()/log_audit_event() helpers so the
+// tamper-evident chains stay valid. Safe to re-run - continues case refs
+// from the current max per year rather than colliding.
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);

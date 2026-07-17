@@ -2,8 +2,7 @@
 // index.php
 session_start();
 
-// DB connection comes entirely from environment variables (see
-// docker-compose.yml) - this app only runs in Docker.
+// DB connection comes entirely from environment variables.
 if (!getenv('DB_HOST') || !getenv('DB_USER') || getenv('DB_PASS') === false || !getenv('DB_NAME')) {
     die("Database environment variables (DB_HOST/DB_USER/DB_PASS/DB_NAME) are not set - check docker-compose.yml.");
 }

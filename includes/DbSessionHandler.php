@@ -2,11 +2,7 @@
 // includes/DbSessionHandler.php
 //
 // Stores PHP sessions in the `sessions` table instead of container-local
-// disk, so a session survives a container restart and would work correctly
-// if the app were ever scaled to more than one replica behind a load
-// balancer. Queries are defensively guarded (@ + falsy checks) rather than
-// throwing, since a transient DB hiccup here shouldn't take the whole app
-// down mid-session.
+// disk, so a session survives a container restart.
 
 class DbSessionHandler implements SessionHandlerInterface
 {

@@ -8,9 +8,7 @@ require_once('../db.php');
 require_once('../includes/audit.php');
 require_once('../header.php');
 
-// This page has no PHP header() redirect on success (it uses a JS
-// setTimeout redirect after rendering), so header.php can safely stay
-// here at the top - no headers-already-sent issue in this file.
+// No PHP header() redirect on success (uses a JS setTimeout redirect instead).
 
 // Fetch asset types
 $assetTypes = [];
