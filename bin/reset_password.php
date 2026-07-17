@@ -5,6 +5,7 @@
 //
 //   docker exec -it polaris_app php bin/reset_password.php user@example.com 'NewPassword123!'
 
+
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
     die("This script is CLI-only.\n");
