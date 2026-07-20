@@ -201,6 +201,7 @@ $unread_count = $notif_row['unread'];
         <a href="/captains_quarters/cq_dashboard.php">System Management</a>
         <a href="/logisticshub/lh_dashboard.php">Asset Management</a>
         <a href="/user_profile.php">User Profile</a>
+        <a href="/about.php">About</a>
     </nav>
 
     <script>
