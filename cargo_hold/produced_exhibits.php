@@ -5,6 +5,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_view');
 require_once '../header.php';
 
 if (!isset($_GET['job_id'])) {

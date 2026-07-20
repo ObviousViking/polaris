@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit.php';
+require_once '../includes/permissions.php';
 
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
@@ -33,8 +34,8 @@ if (mysqli_num_rows($task_query) != 1) {
 }
 $task = mysqli_fetch_assoc($task_query);
 
-// Only an admin/super user, or the user the task is assigned to, may edit it.
-if ($role !== 'admin' && $role !== 'super' && (int)$task['assigned_to'] !== (int)$_SESSION['user_id']) {
+// Only a user with task_manage, or the user the task is assigned to, may edit it.
+if (!user_can($conn, (int) $_SESSION['user_id'], 'task_manage') && (int)$task['assigned_to'] !== (int)$_SESSION['user_id']) {
     echo '<p style="color: var(--polaris-danger);">You do not have permission to edit this task.</p>';
     exit();
 }

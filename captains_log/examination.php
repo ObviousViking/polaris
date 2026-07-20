@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'examination_view');
 include '../header.php';
 
 // Validate exhibit_id

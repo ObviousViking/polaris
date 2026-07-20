@@ -6,16 +6,12 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once('../db.php');
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_view');
 
 $embedded = isset($_GET['embedded']);
 
-$roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$roleStmt->bind_param("i", $_SESSION['user_id']);
-$roleStmt->execute();
-$roleStmt->bind_result($currentUserRole);
-$roleStmt->fetch();
-$roleStmt->close();
-$canSeeDeleted = ($currentUserRole === 'admin' || $currentUserRole === 'super');
+$canSeeDeleted = user_can($conn, (int) $_SESSION['user_id'], 'exhibit_delete');
 
 // Initialize search variables
 $exhibit_ref   = isset($_GET['exhibit_ref']) ? trim($_GET['exhibit_ref']) : "";

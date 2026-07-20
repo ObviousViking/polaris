@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_view');
 
 if (!isset($_GET['exhibit_id'])) {
     die("Exhibit ID not specified.");

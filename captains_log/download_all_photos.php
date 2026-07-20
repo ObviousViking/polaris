@@ -5,6 +5,10 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once '../db.php';
+require_once '../includes/permissions.php';
+if (!user_can($conn, (int) $_SESSION['user_id'], 'document_manage')) {
+    die("You do not have permission to download photos.");
+}
 
 $exhibit_id = isset($_GET['exhibit_id']) ? intval($_GET['exhibit_id']) : 0;
 if ($exhibit_id <= 0) die("Invalid exhibit ID");

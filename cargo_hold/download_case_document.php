@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'document_manage');
 
 $doc_id = isset($_GET['doc_id']) ? intval($_GET['doc_id']) : 0;
 $stmt = $conn->prepare("SELECT file_path, original_filename FROM case_documents WHERE id = ?");

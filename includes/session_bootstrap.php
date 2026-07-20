@@ -56,6 +56,11 @@ if (!empty($db_host) && !empty($db_name)) {
         require_once __DIR__ . '/achievements.php';
         sync_achievement_catalog($conn);
 
+        require_once __DIR__ . '/permissions.php';
+        sync_permission_catalog($conn);
+        seed_role_default_permissions_if_empty($conn);
+        grandfather_existing_users($conn);
+
         require_once __DIR__ . '/DbSessionHandler.php';
         $handler = new DbSessionHandler($conn, (int) ini_get('session.gc_maxlifetime'));
         session_set_save_handler($handler, true);

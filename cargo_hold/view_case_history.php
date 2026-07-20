@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_view');
 
 if (!isset($_GET['job_id'])) {
     die("Job ID not specified.");

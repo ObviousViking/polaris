@@ -10,15 +10,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit_render.php';
+require_once '../includes/permissions.php';
 
 $task_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
 
 $taskStmt = $conn->prepare("SELECT id, task_ref, custom_ref, description, assigned_to FROM tasks WHERE id = ? LIMIT 1");
 $taskStmt->bind_param("i", $task_id);
@@ -31,8 +25,8 @@ if (!$task) {
     exit();
 }
 
-// Same rule as edit_task.php: admin/super, or the assigned user.
-if ($role !== 'admin' && $role !== 'super' && (int) $task['assigned_to'] !== (int) $_SESSION['user_id']) {
+// Same rule as edit_task.php: task_manage, or the assigned user.
+if (!user_can($conn, (int) $_SESSION['user_id'], 'task_manage') && (int) $task['assigned_to'] !== (int) $_SESSION['user_id']) {
     header("Location: ../dashboard.php");
     exit();
 }

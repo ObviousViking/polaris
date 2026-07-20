@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/settings.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_create');
 
 $embedded = isset($_GET['embedded']) || isset($_POST['embedded']);
 if ($embedded) {

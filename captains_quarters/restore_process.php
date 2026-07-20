@@ -13,21 +13,11 @@ require_once '../db.php';
 require_once '../includes/audit.php';
 require_once '../includes/settings.php';
 require_once '../includes/backup.php';
-
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
-
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_backup');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: system_settings.php");
+    header("Location: backup_restore.php");
     exit();
 }
 
@@ -35,7 +25,7 @@ function fail(string $message): void
 {
     $_SESSION['restore_message'] = $message;
     $_SESSION['restore_message_type'] = 'error';
-    header("Location: system_settings.php");
+    header("Location: backup_restore.php");
     exit();
 }
 

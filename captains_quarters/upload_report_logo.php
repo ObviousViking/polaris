@@ -8,18 +8,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
-
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
-
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_settings');
 
 require_once '../includes/settings.php';
 require_once '../includes/audit.php';
@@ -39,22 +29,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_logo'])) {
         @unlink($logoDir . $existing);
         save_report_logo_filename($conn, null);
         log_audit_event($conn, 'setting', null, 'UPDATE', (int) $_SESSION['user_id'], json_encode(['setting_key' => 'report_logo_filename', 'action' => 'removed']));
-        $_SESSION['restore_message'] = "Report logo removed.";
-        $_SESSION['restore_message_type'] = 'success';
+        $_SESSION['logo_message'] = "Report logo removed.";
+        $_SESSION['logo_message_type'] = 'success';
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
     $original_name = basename($_FILES['logo']['name']);
     $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
 
     if (!in_array($extension, $allowed_extensions, true)) {
-        $_SESSION['restore_message'] = "File type not allowed. Permitted types: " . implode(', ', $allowed_extensions) . ".";
-        $_SESSION['restore_message_type'] = 'error';
+        $_SESSION['logo_message'] = "File type not allowed. Permitted types: " . implode(', ', $allowed_extensions) . ".";
+        $_SESSION['logo_message_type'] = 'error';
     } elseif ($_FILES['logo']['size'] > REPORT_LOGO_MAX_BYTES) {
-        $_SESSION['restore_message'] = "Logo file is too large (max 2MB).";
-        $_SESSION['restore_message_type'] = 'error';
+        $_SESSION['logo_message'] = "Logo file is too large (max 2MB).";
+        $_SESSION['logo_message_type'] = 'error';
     } elseif (@getimagesize($_FILES['logo']['tmp_name']) === false) {
-        $_SESSION['restore_message'] = "That file doesn't look like a valid image.";
-        $_SESSION['restore_message_type'] = 'error';
+        $_SESSION['logo_message'] = "That file doesn't look like a valid image.";
+        $_SESSION['logo_message_type'] = 'error';
     } else {
         $existing = get_report_logo_filename($conn);
         $new_filename = 'logo_' . time() . '.' . $extension;
@@ -66,14 +56,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_logo'])) {
                 @unlink($logoDir . $existing);
             }
             log_audit_event($conn, 'setting', null, 'UPDATE', (int) $_SESSION['user_id'], json_encode(['setting_key' => 'report_logo_filename', 'action' => 'uploaded']));
-            $_SESSION['restore_message'] = "Report logo updated.";
-            $_SESSION['restore_message_type'] = 'success';
+            $_SESSION['logo_message'] = "Report logo updated.";
+            $_SESSION['logo_message_type'] = 'success';
         } else {
-            $_SESSION['restore_message'] = "Upload failed. Please check file permissions or try a smaller file.";
-            $_SESSION['restore_message_type'] = 'error';
+            $_SESSION['logo_message'] = "Upload failed. Please check file permissions or try a smaller file.";
+            $_SESSION['logo_message_type'] = 'error';
         }
     }
 }
 
-header("Location: system_settings.php");
+header("Location: manage_settings.php");
 exit();

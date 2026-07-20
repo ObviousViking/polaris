@@ -7,6 +7,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'task_manage');
 
 $embedded = isset($_GET['embedded']) || isset($_POST['embedded']);
 $error = ''; // Track error message

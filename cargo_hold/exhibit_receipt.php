@@ -10,6 +10,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once('../db.php');
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_view');
 
 // Ensure job_id and exhibit ids are provided.
 if (!isset($_GET['job_id'])) {

@@ -6,37 +6,50 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
+require_once '../includes/permissions.php';
 
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
+$userId = (int) $_SESSION['user_id'];
 
-// Everyone can reach this shell now (Manage Storage Settings needs to be
-// open to normal users) - the admin-only nav items below are just hidden
-// from non-admins, not actually gone: each of those pages still enforces
-// its own admin/super check if reached directly.
-$isAdmin = $role === 'admin' || $role === 'super';
+// Everyone can reach this shell (Settings needs to be open to normal users
+// for its Storage Settings card) - each nav item below is shown only if
+// the user actually has the matching permission, and each linked page
+// still enforces its own check if reached directly regardless of the nav.
+$canManageUsers = user_can($conn, $userId, 'manage_users');
+$canManageRolePermissions = user_can($conn, $userId, 'manage_role_permissions');
+$canViewTasking = user_can($conn, $userId, 'task_view');
+$canManageBackup = user_can($conn, $userId, 'manage_backup');
+$canViewLogsIntegrity = user_can($conn, $userId, 'view_logs_integrity');
+$canManageProcesses = user_can($conn, $userId, 'manage_processes');
+$canViewReports = user_can($conn, $userId, 'view_reports');
 
 include '../header.php';
 ?>
 
 <div class="cq-shell">
     <div class="cq-nav">
-        <?php if ($isAdmin): ?>
+        <?php if ($canManageUsers): ?>
         <a href="manage_users.php?embedded=1" target="cq-content">Manage Users</a>
         <a href="create_user.php?embedded=1" target="cq-content">Create User</a>
-        <a href="system_settings.php?embedded=1" target="cq-content">System Settings</a>
-        <a href="view_logs.php?embedded=1" target="cq-content">View Logs</a>
-        <a href="check_integrity.php?embedded=1" target="cq-content">Check Database Integrity</a>
-        <a href="manage_sla.php?embedded=1" target="cq-content">Configure SLA</a>
-        <a href="manage_processes.php?embedded=1" target="cq-content">Process Builder</a>
-        <a href="reports.php?embedded=1" target="cq-content">System Reports</a>
+        <?php endif; ?>
+        <?php if ($canManageRolePermissions): ?>
+        <a href="manage_role_permissions.php?embedded=1" target="cq-content">Manage Role Permissions</a>
+        <?php endif; ?>
+        <?php if ($canViewTasking): ?>
         <a href="tasking.php?embedded=1" target="cq-content">Tasking</a>
         <?php endif; ?>
-        <a href="manage_storage_settings.php?embedded=1" target="cq-content">Manage Storage Settings</a>
+        <?php if ($canManageBackup): ?>
+        <a href="backup_restore.php?embedded=1" target="cq-content">Backup / Restore</a>
+        <?php endif; ?>
+        <a href="manage_settings.php?embedded=1" target="cq-content">Settings</a>
+        <?php if ($canViewLogsIntegrity): ?>
+        <a href="logs_and_integrity.php?embedded=1" target="cq-content">Logs &amp; Integrity</a>
+        <?php endif; ?>
+        <?php if ($canManageProcesses): ?>
+        <a href="manage_processes.php?embedded=1" target="cq-content">Process Builder</a>
+        <?php endif; ?>
+        <?php if ($canViewReports): ?>
+        <a href="reports.php?embedded=1" target="cq-content">System Reports</a>
+        <?php endif; ?>
     </div>
     <iframe name="cq-content" class="cq-content" srcdoc="<!DOCTYPE html><html<?php echo $userTheme === 'light' ? " data-theme='light'" : ''; ?>><head><meta charset='UTF-8'><link rel='stylesheet' href='/assets/theme.css'><style>body{margin:0;padding:20px;font-family:Arial,sans-serif;background:var(--polaris-bg);color:var(--polaris-text-muted);}h2{color:var(--polaris-text);margin:0 0 10px;}</style></head><body><h2>System Management</h2><p>Choose an option on the left.</p></body></html>"></iframe>
 </div>

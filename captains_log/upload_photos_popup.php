@@ -10,6 +10,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once '../db.php';
 require_once '../includes/settings.php';
+require_once '../includes/permissions.php';
 
 $config = get_storage_settings($conn);
 $man_no = preg_replace('/[^\w\-]/', '_', $_SESSION['user_id'] ?? null);
@@ -17,6 +18,9 @@ $exhibit_id = isset($_GET['exhibit_id']) ? intval($_GET['exhibit_id']) : 0;
 
 if (!$man_no || $exhibit_id <= 0) {
     die("Not authenticated or invalid exhibit.");
+}
+if (!user_can($conn, (int) $_SESSION['user_id'], 'document_manage')) {
+    die("You do not have permission to upload photos.");
 }
 
 // Handle the AJAX upload request first, before any HTML is output.

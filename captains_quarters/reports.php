@@ -8,19 +8,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
-
-// Check admin privileges (assumes an admin has role 'admin' or 'super').
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
-
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'view_reports');
 
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
@@ -168,7 +157,7 @@ function render_bar_rows(array $rows, string $labelKey, string $valueKey): strin
     <h2>System Reports</h2>
     <p style="color:var(--polaris-text-dim);">Draft v1 - operational snapshot across all cases and exhibits.
         "Overdue"/"Due soon" are measured against each case's Strategy Due date (see
-        <a href="manage_sla.php<?php echo $embedded ? '?embedded=1' : ''; ?>">Configure SLA</a>).
+        <a href="manage_settings.php<?php echo $embedded ? '?embedded=1' : ''; ?>">Configure SLA</a>).
         Deleted exhibits are excluded throughout.</p>
 
     <div class="kpi-grid">

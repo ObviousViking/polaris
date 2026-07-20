@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once('../db.php');
 require_once('../includes/integrity.php');
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_edit');
 
 // Ensure exhibit_id is provided
 if (!isset($_GET['exhibit_id'])) {

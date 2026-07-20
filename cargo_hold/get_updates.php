@@ -7,6 +7,13 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
+require_once '../includes/permissions.php';
+if (!user_can($conn, (int) $_SESSION['user_id'], 'case_view')) {
+    header('Content-Type: application/json');
+    http_response_code(403);
+    echo json_encode([]);
+    exit();
+}
 
 if (!isset($_GET['job_id'])) {
     echo json_encode([]);

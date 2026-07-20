@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/integrity.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_update_edit');
 
 $update_id = isset($_GET['update_id']) ? intval($_GET['update_id']) : 0;
 if ($update_id <= 0) {

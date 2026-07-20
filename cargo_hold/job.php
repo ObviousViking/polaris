@@ -5,6 +5,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_view');
 
 // Ensure a job_id is provided.
 if (!isset($_GET['job_id'])) {
@@ -19,14 +21,8 @@ if (($_GET['error'] ?? '') === 'reason_required') {
     $pageError = "That deletion was not completed - a reason is required (System Management > System Settings > Require a reason for every deletion).";
 }
 
-// Only admins/super may delete or restore exhibits.
-$roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$roleStmt->bind_param("i", $_SESSION['user_id']);
-$roleStmt->execute();
-$roleStmt->bind_result($currentUserRole);
-$roleStmt->fetch();
-$roleStmt->close();
-$canDeleteExhibits = ($currentUserRole === 'admin' || $currentUserRole === 'super');
+// Only users with exhibit_delete may delete or restore exhibits.
+$canDeleteExhibits = user_can($conn, (int) $_SESSION['user_id'], 'exhibit_delete');
 
 // Retrieve job details along with lookup data.
 $stmt = $conn->prepare("

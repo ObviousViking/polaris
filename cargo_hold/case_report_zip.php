@@ -10,6 +10,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_report');
 
 if (!isset($_GET['job_id'])) {
     die("Job ID not specified.");

@@ -1,38 +1,13 @@
 <?php
-// system_settings.php
+// backup_restore.php
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
 require_once '../db.php';
-
-// Check admin privileges (assumes an admin has role 'admin' or 'super').
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
-
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
-
-require_once '../includes/settings.php';
-require_once '../includes/audit.php';
-
-$settingsMessage = "";
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deletion_reason_settings_form'])) {
-    $required = ($_POST['require_deletion_reason_toggle'] ?? '0') === '1';
-    if (save_require_deletion_reason($conn, $required)) {
-        log_audit_event($conn, 'setting', null, 'UPDATE', (int) $_SESSION['user_id'], json_encode(['setting_key' => 'require_deletion_reason', 'setting_value' => $required ? '1' : '0']));
-        $settingsMessage = $required ? "Deletion reasons are now required." : "Deletion reasons are no longer required.";
-    } else {
-        $settingsMessage = "Error updating setting.";
-    }
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_backup');
 
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
@@ -44,15 +19,6 @@ if ($embedded) {
 $restoreMessage = $_SESSION['restore_message'] ?? null;
 $restoreMessageType = $_SESSION['restore_message_type'] ?? 'error';
 unset($_SESSION['restore_message'], $_SESSION['restore_message_type']);
-
-$requireDeletionReasonSetting = get_require_deletion_reason($conn);
-
-$reportLogoFilename = get_report_logo_filename($conn);
-$reportLogoUrl = null;
-if ($reportLogoFilename !== null) {
-    $storageConfig = get_storage_settings($conn);
-    $reportLogoUrl = $storageConfig['paths']['report_logo_dir_url'] . $reportLogoFilename;
-}
 ?>
 <style>
     body {
@@ -170,18 +136,6 @@ if ($reportLogoFilename !== null) {
         color: var(--polaris-success-text);
     }
 
-    .toggle-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .toggle-row label {
-        margin: 0;
-        color: var(--polaris-text);
-        font-size: 15px;
-    }
-
     .back-btn {
         display: inline-block;
         padding: 5px 10px;
@@ -203,57 +157,13 @@ if ($reportLogoFilename !== null) {
 </style>
 
 <div class="container">
-    <h2>System Settings</h2>
+    <h2>Backup / Restore</h2>
 
     <?php if ($restoreMessage): ?>
     <div class="message <?php echo htmlspecialchars($restoreMessageType); ?>">
         <?php echo htmlspecialchars($restoreMessage); ?>
     </div>
     <?php endif; ?>
-
-    <?php if ($settingsMessage): ?>
-    <div class="message success"><?php echo htmlspecialchars($settingsMessage); ?></div>
-    <?php endif; ?>
-
-    <div class="card">
-        <h3>Deletion Reasons</h3>
-        <p>When on, deleting anything in Polaris - exhibits, case updates, case types, statuses, exhibit locations,
-            and Process Builder templates/fields - requires the person deleting it to type a reason first. The reason
-            is recorded alongside the deletion in the audit trail.</p>
-        <form method="post" action="system_settings.php<?php echo $embedded ? '?embedded=1' : ''; ?>">
-            <input type="hidden" name="deletion_reason_settings_form" value="1">
-            <input type="hidden" name="require_deletion_reason_toggle" value="0">
-            <div class="toggle-row">
-                <input type="checkbox" id="require_deletion_reason_toggle_cb" name="require_deletion_reason_toggle"
-                    value="1" <?php echo $requireDeletionReasonSetting ? 'checked' : ''; ?>
-                    onchange="this.form.submit()">
-                <label for="require_deletion_reason_toggle_cb">Require a reason for every deletion</label>
-            </div>
-        </form>
-    </div>
-
-    <div class="card">
-        <h3>Report Branding</h3>
-        <p>Logo shown on the printable Case Report letterhead. PNG or JPG, max 2MB.</p>
-        <?php if ($reportLogoUrl): ?>
-        <div style="margin:10px 0;">
-            <img src="<?php echo htmlspecialchars($reportLogoUrl); ?>" alt="Current report logo"
-                style="max-height:70px; max-width:260px; background:#fff; padding:6px; border-radius:4px;">
-        </div>
-        <form method="post" action="upload_report_logo.php" style="display:inline;">
-            <input type="hidden" name="remove_logo" value="1">
-            <button type="submit" class="action-btn danger-btn"
-                onclick="return confirm('Remove the report logo?');">Remove Logo</button>
-        </form>
-        <?php else: ?>
-        <p class="empty-note" style="color: var(--polaris-text-secondary); font-style:italic;">No logo uploaded yet.</p>
-        <?php endif; ?>
-        <form method="post" action="upload_report_logo.php" enctype="multipart/form-data" style="margin-top:10px;">
-            <label for="logo">Upload new logo</label>
-            <input type="file" name="logo" id="logo" accept=".png,.jpg,.jpeg" required>
-            <button type="submit" class="action-btn" style="margin-top:10px;">Upload</button>
-        </form>
-    </div>
 
     <div class="card">
         <h3>Backup</h3>

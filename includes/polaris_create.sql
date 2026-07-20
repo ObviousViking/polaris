@@ -902,6 +902,55 @@ CREATE TABLE `user_achievements` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `permissions`
+--
+
+DROP TABLE IF EXISTS `permissions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `permissions` (
+  `permission_key` varchar(50) NOT NULL,
+  `label` varchar(150) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `category` varchar(50) NOT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`permission_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `role_default_permissions`
+--
+
+DROP TABLE IF EXISTS `role_default_permissions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `role_default_permissions` (
+  `role` varchar(50) NOT NULL,
+  `permission_key` varchar(50) NOT NULL,
+  PRIMARY KEY (`role`,`permission_key`),
+  CONSTRAINT `role_default_permissions_ibfk_1` FOREIGN KEY (`permission_key`) REFERENCES `permissions` (`permission_key`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `user_permissions`
+--
+
+DROP TABLE IF EXISTS `user_permissions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `user_permissions` (
+  `user_id` int NOT NULL,
+  `permission_key` varchar(50) NOT NULL,
+  PRIMARY KEY (`user_id`,`permission_key`),
+  KEY `permission_key` (`permission_key`),
+  CONSTRAINT `user_permissions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `user_permissions_ibfk_2` FOREIGN KEY (`permission_key`) REFERENCES `permissions` (`permission_key`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Dumping events for database 'polaris'
 --
 

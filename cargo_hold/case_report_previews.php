@@ -11,8 +11,15 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/document_preview.php';
+require_once '../includes/permissions.php';
 
 header('Content-Type: application/json');
+
+if (!user_can($conn, (int) $_SESSION['user_id'], 'case_report')) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Forbidden.']);
+    exit();
+}
 
 if (!isset($_GET['job_id'])) {
     http_response_code(400);

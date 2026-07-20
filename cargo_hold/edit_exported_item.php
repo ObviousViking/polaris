@@ -9,13 +9,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit.php';
-
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
+require_once '../includes/permissions.php';
 
 $item_id = isset($_GET['item_id']) ? intval($_GET['item_id']) : 0;
 
@@ -30,8 +24,8 @@ if (!$item) {
     exit();
 }
 
-// Only an admin/super user, or the assigned user, may edit it.
-if ($role !== 'admin' && $role !== 'super' && (int) $item['assigned_to'] !== (int) $_SESSION['user_id']) {
+// Only a user with exhibit_edit, or the assigned user, may edit it.
+if (!user_can($conn, (int) $_SESSION['user_id'], 'exhibit_edit') && (int) $item['assigned_to'] !== (int) $_SESSION['user_id']) {
     echo '<p style="color: var(--polaris-danger);">You do not have permission to edit this item.</p>';
     exit();
 }

@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_create');
 
 $parent_id = isset($_GET['parent_id']) ? intval($_GET['parent_id']) : 0;
 if ($parent_id <= 0) {

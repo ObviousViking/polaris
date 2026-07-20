@@ -7,6 +7,8 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../db.php';
 require_once '../includes/settings.php';
 require_once '../includes/integrity.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'document_manage');
 
 $job_id = isset($_GET['job_id']) ? intval($_GET['job_id']) : 0;
 if ($job_id <= 0) {

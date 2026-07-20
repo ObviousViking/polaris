@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once('../db.php');
+require_once '../includes/permissions.php';
+require_permission($conn, 'examination_view');
 
 // Strips HTML from rich-text notes down to plain readable text.
 function plain_text_preview(?string $html, ?int $maxLen = null): string
@@ -34,13 +36,7 @@ function pagination_url(int $targetPage): string
 
 $embedded = isset($_GET['embedded']);
 
-$roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$roleStmt->bind_param("i", $_SESSION['user_id']);
-$roleStmt->execute();
-$roleStmt->bind_result($currentUserRole);
-$roleStmt->fetch();
-$roleStmt->close();
-$canSeeDeleted = ($currentUserRole === 'admin' || $currentUserRole === 'super');
+$canSeeDeleted = user_can($conn, (int) $_SESSION['user_id'], 'exhibit_delete');
 
 $keyword       = isset($_GET['keyword']) ? trim($_GET['keyword']) : "";
 $process_type  = isset($_GET['process_type']) ? trim($_GET['process_type']) : "";

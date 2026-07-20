@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once('../db.php');
 require_once '../includes/audit.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_lookups');
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
     require_once '../includes/embedded_header.php';

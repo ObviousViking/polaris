@@ -9,18 +9,8 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../db.php';
 require_once '../includes/audit.php';
 require_once '../includes/deletion_reason.php';
-
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
-
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_processes');
 
 $embedded = isset($_GET['embedded']);
 if ($embedded) {

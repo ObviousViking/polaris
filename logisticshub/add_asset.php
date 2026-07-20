@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once('../db.php');
 require_once('../includes/audit.php');
+require_once '../includes/permissions.php';
+require_permission($conn, 'asset_manage');
 require_once('../header.php');
 
 // No PHP header() redirect on success (uses a JS setTimeout redirect instead).

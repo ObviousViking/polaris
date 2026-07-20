@@ -4,6 +4,8 @@ if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_lookups');
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
     require_once '../includes/embedded_header.php';

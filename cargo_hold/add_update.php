@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';  // This file should define $conn
 require_once '../includes/integrity.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_update_add');
 
 if (!isset($_GET['job_id'])) {
     echo "Job ID not specified.";

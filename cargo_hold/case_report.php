@@ -9,6 +9,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'case_report');
 require_once '../includes/document_preview.php';
 require_once '../includes/settings.php';
 

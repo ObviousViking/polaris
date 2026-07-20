@@ -6,6 +6,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'exhibit_edit');
 require_once '../header.php';
 
 if (!isset($_GET['job_id'])) {

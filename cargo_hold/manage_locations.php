@@ -7,6 +7,8 @@ if (!isset($_SESSION['user_id'])) {
 require_once('../db.php');
 require_once '../includes/audit.php';
 require_once '../includes/deletion_reason.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_lookups');
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
     require_once '../includes/embedded_header.php';
@@ -14,13 +16,7 @@ if ($embedded) {
     require_once('../header.php');
 }
 
-$roleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$roleStmt->bind_param("i", $_SESSION['user_id']);
-$roleStmt->execute();
-$roleStmt->bind_result($currentUserRole);
-$roleStmt->fetch();
-$roleStmt->close();
-$canDelete = ($currentUserRole === 'admin' || $currentUserRole === 'super');
+$canDelete = user_can($conn, (int) $_SESSION['user_id'], 'manage_lookups_delete');
 
 $message = "";
 

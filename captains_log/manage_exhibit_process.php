@@ -12,6 +12,8 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../db.php';
 require_once '../includes/integrity.php';
 require_once '../includes/process_lookups.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'examination_edit');
 
 $exhibit_process_id = isset($_GET['exhibit_process_id']) ? intval($_GET['exhibit_process_id']) : 0;
 $isEdit = $exhibit_process_id > 0;

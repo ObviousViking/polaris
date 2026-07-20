@@ -7,19 +7,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit.php';
-
-// Check that the user has admin privileges (allow admin or super)
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
-
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_users');
 
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
@@ -64,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === "POST") {
             $stmt->bind_param("sssss", $first_name, $last_name, $email, $hashed_password, $role_new);
             if ($stmt->execute()) {
                 $newUserId = $conn->insert_id;
+                apply_role_default_permissions($conn, $newUserId, $role_new);
                 log_audit_event($conn, 'user', $newUserId, 'CREATE', (int) $_SESSION['user_id'], json_encode(['first_name' => $first_name, 'last_name' => $last_name, 'email' => $email, 'role' => $role_new]));
                 $message = "User created successfully with default password: Password1!";
                 $message_type = "success";

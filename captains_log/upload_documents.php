@@ -10,6 +10,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/settings.php';
+require_once '../includes/permissions.php';
+require_permission($conn, 'document_manage');
 
 $allowed_document_extensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt', 'jpg', 'jpeg', 'png'];
 

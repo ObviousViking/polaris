@@ -5,6 +5,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once('../db.php');
+require_once '../includes/permissions.php';
+require_permission($conn, 'asset_view');
 if (isset($_GET['embedded'])) {
     require_once '../includes/embedded_header.php';
 } else {

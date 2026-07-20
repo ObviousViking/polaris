@@ -7,22 +7,23 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/audit.php';
-
-// Only admins/super users may view or edit other accounts.
-$role_stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$role_stmt->bind_param("i", $_SESSION['user_id']);
-$role_stmt->execute();
-$role_stmt->bind_result($requesting_role);
-$role_stmt->fetch();
-$role_stmt->close();
-
-if ($requesting_role !== 'admin' && $requesting_role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+require_once '../includes/permissions.php';
+require_permission($conn, 'manage_users');
 
 // Get user ID from URL
 $user_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+// Look up the role as currently stored, so we can tell if it's changing and
+// so we can identify the super user by role rather than a hardcoded id.
+$old_role = null;
+$oldRoleStmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
+$oldRoleStmt->bind_param("i", $user_id);
+$oldRoleStmt->execute();
+$oldRoleStmt->bind_result($old_role);
+$oldRoleStmt->fetch();
+$oldRoleStmt->close();
+
+$is_super_user = ($old_role === 'super');
 
 // Initialize message variables
 $message = "";
@@ -36,8 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $role       = trim($_POST['role']);
     $active     = (int)$_POST['active'];
 
-    // If this is the super user (id = 1), force role to remain 'super'
-    if ($user_id === 1) {
+    // The super user's role can never be changed away from 'super'.
+    if ($is_super_user) {
         $role = 'super';
     }
 
@@ -54,6 +55,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param("ssssii", $first_name, $last_name, $email, $role, $active, $user_id);
         if ($stmt->execute()) {
             log_audit_event($conn, 'user', $user_id, 'UPDATE', (int) $_SESSION['user_id'], json_encode(['first_name' => $first_name, 'last_name' => $last_name, 'email' => $email, 'role' => $role, 'active' => $active]));
+
+            // Super's access is hardcoded and not stored as explicit rows.
+            if (!$is_super_user) {
+                // Assigning a (changed) role lands a fresh one-time snapshot
+                // of that role's current default bundle.
+                if ($role !== $old_role) {
+                    apply_role_default_permissions($conn, $user_id, $role);
+                }
+
+                // Apply the submitted checkbox state as overrides on top -
+                // grant anything newly checked, revoke anything newly unchecked.
+                $validKeys = array_column(PERMISSION_DEFINITIONS, 'key');
+                $submittedKeys = array_values(array_intersect($_POST['permissions'] ?? [], $validKeys));
+                $currentKeys = get_user_permission_keys($conn, $user_id);
+
+                $toGrant = array_diff($submittedKeys, $currentKeys);
+                $toRevoke = array_diff($currentKeys, $submittedKeys);
+
+                if ($toGrant) {
+                    $grantStmt = $conn->prepare("INSERT IGNORE INTO user_permissions (user_id, permission_key) VALUES (?, ?)");
+                    foreach ($toGrant as $key) {
+                        $grantStmt->bind_param("is", $user_id, $key);
+                        $grantStmt->execute();
+                    }
+                    $grantStmt->close();
+                }
+                if ($toRevoke) {
+                    $revokeStmt = $conn->prepare("DELETE FROM user_permissions WHERE user_id = ? AND permission_key = ?");
+                    foreach ($toRevoke as $key) {
+                        $revokeStmt->bind_param("is", $user_id, $key);
+                        $revokeStmt->execute();
+                    }
+                    $revokeStmt->close();
+                }
+            }
+
             $message = "User updated successfully.";
             $message_type = "success";
         } else {
@@ -76,8 +113,8 @@ if (!$user) {
     exit();
 }
 
-// Check if this is the super user
-$is_super_user = ($user_id === 1);
+$permissionGroups = get_all_permissions_grouped($conn);
+$grantedPermissionKeys = $is_super_user ? [] : get_user_permission_keys($conn, $user_id);
 
 $userTheme = "dark";
 if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
@@ -138,6 +175,34 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
                 <option value="0" <?php echo !$user['active'] ? 'selected' : ''; ?>>Inactive</option>
             </select>
         </div>
+
+        <div>
+            <label>Permissions:</label>
+            <?php if ($is_super_user): ?>
+            <p class="permissions-note">Super users have unrestricted access to everything. This cannot be edited.</p>
+            <?php else: ?>
+            <p class="permissions-note">Changing the role above and saving will reset these to that role's default
+                bundle before applying any changes made here.</p>
+            <div class="permissions-grid">
+                <?php foreach ($permissionGroups as $category => $perms): ?>
+                <div class="permissions-category">
+                    <h4><?php echo htmlspecialchars($category); ?></h4>
+                    <?php foreach ($perms as $perm): ?>
+                    <label class="permission-item">
+                        <input type="checkbox" name="permissions[]"
+                            value="<?php echo htmlspecialchars($perm['permission_key']); ?>" <?php echo in_array($perm['permission_key'], $grantedPermissionKeys, true) ? 'checked' : ''; ?>>
+                        <span class="permission-label"><?php echo htmlspecialchars($perm['label']); ?></span>
+                        <?php if (!empty($perm['description'])): ?>
+                        <span class="permission-desc"><?php echo htmlspecialchars($perm['description']); ?></span>
+                        <?php endif; ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+
         <input type="submit" value="Save Changes">
     </form>
 
@@ -207,6 +272,55 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
         padding: 10px;
         border-radius: 4px;
         margin-bottom: 15px;
+    }
+
+    .permissions-note {
+        font-weight: normal;
+        color: var(--polaris-gray-light-2);
+        margin: 0 0 10px 0;
+        font-size: 13px;
+    }
+
+    .permissions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 15px;
+    }
+
+    .permissions-category {
+        background: var(--polaris-divider);
+        border: 1px solid var(--polaris-border);
+        border-radius: 4px;
+        padding: 10px 12px;
+    }
+
+    .permissions-category h4 {
+        margin: 0 0 8px 0;
+        color: var(--polaris-text);
+        font-size: 14px;
+    }
+
+    .permission-item {
+        display: block;
+        font-weight: normal;
+        margin-bottom: 8px;
+        cursor: pointer;
+    }
+
+    .permission-item input[type="checkbox"] {
+        width: auto;
+        margin-right: 6px;
+    }
+
+    .permission-label {
+        color: var(--polaris-text);
+    }
+
+    .permission-desc {
+        display: block;
+        margin-left: 20px;
+        font-size: 12px;
+        color: var(--polaris-gray-light-2);
     }
     </style>
 </body>
