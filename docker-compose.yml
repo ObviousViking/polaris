@@ -24,7 +24,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - polaris_db_data:/var/lib/mysql
+      - ${POLARIS_DB_PATH:-${POLARIS_DATA_PATH:-./polaris_data}/database}:/var/lib/mysql
     # log_bin_trust_function_creators lets the app's non-root DB user create triggers.
     command: --default-authentication-plugin=mysql_native_password --log_bin_trust_function_creators=1
     healthcheck:
@@ -47,12 +47,9 @@ services:
       DB_PASS: change_me_app
       DB_NAME: polaris
       # Host path shown in the UI (Setup / Manage Storage Settings).
-      DATA_HOST_PATH: ${POLARIS_DATA_PATH:-./polaris_data}
+      DATA_HOST_PATH: ${POLARIS_CASE_FILES_PATH:-${POLARIS_DATA_PATH:-./polaris_data}/case-files}
       HISTORY_HMAC_KEY: ${HISTORY_HMAC_KEY:-change_me_hmac_key}
     ports:
       - "8080:80"
     volumes:
-      - ${POLARIS_DATA_PATH:-./polaris_data}:/var/www/polaris-data
-
-volumes:
-  polaris_db_data:
+      - ${POLARIS_CASE_FILES_PATH:-${POLARIS_DATA_PATH:-./polaris_data}/case-files}:/var/www/polaris-data

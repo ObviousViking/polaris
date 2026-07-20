@@ -105,8 +105,6 @@ if ($embedded) {
                     Case Status</a></li>
             <li><a href="manage_case_types.php<?php echo $embedded ? '?embedded=1' : ''; ?>" class="action-btn">Manage
                     Case Types</a></li>
-            <li><a href="manage_storage_settings.php<?php echo $embedded ? '?embedded=1' : ''; ?>"
-                    class="action-btn">Manage Storage Settings</a></li>
         </ul>
         <hr>
         <br>

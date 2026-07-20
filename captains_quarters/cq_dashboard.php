@@ -7,7 +7,6 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 
-// Check admin privileges (assumes an admin has role 'admin').
 $stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
 $stmt->bind_param("i", $_SESSION['user_id']);
 $stmt->execute();
@@ -15,16 +14,18 @@ $stmt->bind_result($role);
 $stmt->fetch();
 $stmt->close();
 
-if ($role !== 'admin' && $role !== 'super') {
-    header("Location: ../dashboard.php");
-    exit();
-}
+// Everyone can reach this shell now (Manage Storage Settings needs to be
+// open to normal users) - the admin-only nav items below are just hidden
+// from non-admins, not actually gone: each of those pages still enforces
+// its own admin/super check if reached directly.
+$isAdmin = $role === 'admin' || $role === 'super';
 
 include '../header.php';
 ?>
 
 <div class="cq-shell">
     <div class="cq-nav">
+        <?php if ($isAdmin): ?>
         <a href="manage_users.php?embedded=1" target="cq-content">Manage Users</a>
         <a href="create_user.php?embedded=1" target="cq-content">Create User</a>
         <a href="system_settings.php?embedded=1" target="cq-content">System Settings</a>
@@ -34,6 +35,8 @@ include '../header.php';
         <a href="manage_processes.php?embedded=1" target="cq-content">Process Builder</a>
         <a href="reports.php?embedded=1" target="cq-content">System Reports</a>
         <a href="tasking.php?embedded=1" target="cq-content">Tasking</a>
+        <?php endif; ?>
+        <a href="manage_storage_settings.php?embedded=1" target="cq-content">Manage Storage Settings</a>
     </div>
     <iframe name="cq-content" class="cq-content" srcdoc="<!DOCTYPE html><html<?php echo $userTheme === 'light' ? " data-theme='light'" : ''; ?>><head><meta charset='UTF-8'><link rel='stylesheet' href='/assets/theme.css'><style>body{margin:0;padding:20px;font-family:Arial,sans-serif;background:var(--polaris-bg);color:var(--polaris-text-muted);}h2{color:var(--polaris-text);margin:0 0 10px;}</style></head><body><h2>System Management</h2><p>Choose an option on the left.</p></body></html>"></iframe>
 </div>

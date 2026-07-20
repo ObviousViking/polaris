@@ -137,7 +137,7 @@ $data_root = get_data_root($conn);
 
         <br>
         <?php if (!$embedded): ?>
-        <a href="manage_system_details.php" class="back-btn">Go Back</a>
+        <a href="cq_dashboard.php" class="back-btn">Go Back</a>
         <?php endif; ?>
     </div>
 </body>
