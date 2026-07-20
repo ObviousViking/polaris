@@ -378,6 +378,10 @@ include '../header.php';
         width: 100px;
     }
 
+    .updates-table col.col-comm {
+        width: 150px;
+    }
+
     .updates-table col.col-user {
         width: 120px;
     }
@@ -628,16 +632,19 @@ include '../header.php';
         var pageItems = allUpdates.slice(start, start + UPDATES_PAGE_SIZE);
 
         var html = "<table class='updates-table'>" +
-            "<colgroup><col class='col-type'><col class='col-user'><col class='col-date'><col><col class='col-actions'></colgroup>" +
-            "<thead><tr><th>Type</th><th>Entered By</th><th>Date/Time</th><th>Text</th><th>Actions</th></tr></thead><tbody>";
+            "<colgroup><col class='col-type'><col class='col-comm'><col class='col-user'><col class='col-date'><col><col class='col-actions'></colgroup>" +
+            "<thead><tr><th>Type</th><th>Communication</th><th>Entered By</th><th>Date/Time</th><th>Text</th><th>Actions</th></tr></thead><tbody>";
 
         pageItems.forEach(function(update) {
             var typeClass = update.update_type === 'Communication' ? 'type-comm' : 'type-case';
             var plainText = stripHtml(update.update_text);
             var dateCell = escapeHtml(update.update_date) + (update.updated_at ? ' (edited)' : '');
+            var commCell = update.update_type === 'Communication' ?
+                (escapeHtml(update.comm_type || '') + (update.comm_person ? ' &ndash; ' + escapeHtml(update.comm_person) : '')) :
+                '&mdash;';
 
             var actions = "<a href='edit_update.php?update_id=" + update.update_id +
-                "' target='_blank' onclick=\"window.open(this.href, 'editUpdate', 'width=700,height=550'); return false;\">Edit</a>";
+                "' target='_blank' onclick=\"window.open(this.href, 'editUpdate', 'width=700,height=750,scrollbars=yes,resizable=yes'); return false;\">Edit</a>";
             if (canManageUpdates) {
                 actions += " <form method='post' action='delete_update.php' onsubmit=\"return confirmDeleteWithReason(this, 'Delete this update? The text will be removed, but the deletion and its content will be recorded in the case history.');\">" +
                     "<input type='hidden' name='update_id' value='" + update.update_id + "'>" +
@@ -646,6 +653,7 @@ include '../header.php';
 
             html += "<tr>" +
                 "<td><span class='update-type-badge " + typeClass + "'>" + escapeHtml(update.update_type) + "</span></td>" +
+                "<td>" + commCell + "</td>" +
                 "<td>" + escapeHtml(update.first_name) + " " + escapeHtml(update.last_name) + "</td>" +
                 "<td>" + dateCell + "</td>" +
                 "<td title=\"" + escapeHtml(plainText) + "\">" + escapeHtml(plainText) + "</td>" +
@@ -793,7 +801,7 @@ include '../header.php';
                     <p>Loading updates...</p>
                 </div>
                 <a class="action-button" href="add_update.php?job_id=<?php echo $job_id; ?>" target="_blank"
-                    onclick="window.open(this.href, 'addUpdate', 'width=700,height=500'); return false;">Add Update</a>
+                    onclick="window.open(this.href, 'addUpdate', 'width=700,height=700,scrollbars=yes,resizable=yes'); return false;">Add Update</a>
                 <a class="edit-button" href="view_case_history.php?job_id=<?php echo $job_id; ?>"
                     style="margin-left:8px;">View Case History</a>
                 <a class="edit-button" href="case_report.php?job_id=<?php echo $job_id; ?>" target="_top"

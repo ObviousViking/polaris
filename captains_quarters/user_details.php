@@ -25,6 +25,9 @@ $oldRoleStmt->close();
 
 $is_super_user = ($old_role === 'super');
 
+$roles = get_all_roles($conn);
+$assignableRoleKeys = array_column($roles, 'role_key');
+
 // Initialize message variables
 $message = "";
 $message_type = "";
@@ -48,6 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message_type = "error";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $message = "Invalid email address.";
+        $message_type = "error";
+    } elseif (!$is_super_user && !in_array($role, $assignableRoleKeys, true)) {
+        $message = "Invalid role.";
         $message_type = "error";
     } else {
         // Update user in database
@@ -91,8 +97,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $message = "User updated successfully.";
-            $message_type = "success";
+            echo "<script>
+                    window.opener.location.reload();
+                    window.close();
+                  </script>";
+            exit();
         } else {
             $message = "Error updating user.";
             $message_type = "error";
@@ -160,8 +169,10 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
                 <?php if ($is_super_user): ?>
                 <option value="super" selected>Super</option>
                 <?php else: ?>
-                <option value="user" <?php echo $user['role'] === 'user' ? 'selected' : ''; ?>>User</option>
-                <option value="admin" <?php echo $user['role'] === 'admin' ? 'selected' : ''; ?>>Admin</option>
+                <?php foreach ($roles as $r): ?>
+                <option value="<?php echo htmlspecialchars($r['role_key']); ?>" <?php echo $user['role'] === $r['role_key'] ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($r['label']); ?></option>
+                <?php endforeach; ?>
                 <?php endif; ?>
             </select>
             <?php if ($is_super_user): ?>

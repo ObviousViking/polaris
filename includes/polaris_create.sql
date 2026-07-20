@@ -246,6 +246,8 @@ CREATE TABLE `case_updates` (
   `job_id` int NOT NULL,
   `user_id` int NOT NULL,
   `update_type` enum('Case Update','Communication') NOT NULL DEFAULT 'Case Update',
+  `comm_type` enum('Email','Phone','In Person','Other') DEFAULT NULL,
+  `comm_person` varchar(150) DEFAULT NULL,
   `update_text` text NOT NULL,
   `update_date` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT NULL,
@@ -898,6 +900,22 @@ CREATE TABLE `user_achievements` (
   KEY `achievement_id` (`achievement_id`),
   CONSTRAINT `user_achievements_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
   CONSTRAINT `user_achievements_ibfk_2` FOREIGN KEY (`achievement_id`) REFERENCES `achievements` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `roles`
+--
+
+DROP TABLE IF EXISTS `roles`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `roles` (
+  `role_key` varchar(50) NOT NULL,
+  `label` varchar(100) NOT NULL,
+  `is_builtin` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`role_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

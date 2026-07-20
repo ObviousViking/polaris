@@ -23,7 +23,7 @@ if (!isset($_GET['job_id'])) {
 $job_id = intval($_GET['job_id']);
 
 // Deletes are hard deletes (see delete_update.php) - no deleted_at flag to filter here.
-$stmt = $conn->prepare("SELECT cu.update_id, u.first_name, u.last_name, cu.update_type, cu.update_date,
+$stmt = $conn->prepare("SELECT cu.update_id, u.first_name, u.last_name, cu.update_type, cu.comm_type, cu.comm_person, cu.update_date,
                                 cu.update_text, cu.updated_at,
                                 CONCAT(uu.first_name, ' ', uu.last_name) AS updated_by_name
                         FROM case_updates cu

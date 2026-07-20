@@ -16,13 +16,12 @@ if ($embedded) {
     include '../header.php';
 }
 
-// Check admin privileges (assumes an admin has role 'admin' or 'super').
-$stmt = $conn->prepare("SELECT role FROM users WHERE id = ? LIMIT 1");
-$stmt->bind_param("i", $_SESSION['user_id']);
-$stmt->execute();
-$stmt->bind_result($role);
-$stmt->fetch();
-$stmt->close();
+$userId = (int) $_SESSION['user_id'];
+// Whether this user gets full task-management fields (description, custom
+// ref, reassignment) below, vs. just status/completion-comment as a plain
+// assignee - governed by the task_manage permission, not a hardcoded role,
+// so custom roles granted task_manage get full parity with admin/super.
+$canManageTask = user_can($conn, $userId, 'task_manage');
 
 $task_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
@@ -35,7 +34,7 @@ if (mysqli_num_rows($task_query) != 1) {
 $task = mysqli_fetch_assoc($task_query);
 
 // Only a user with task_manage, or the user the task is assigned to, may edit it.
-if (!user_can($conn, (int) $_SESSION['user_id'], 'task_manage') && (int)$task['assigned_to'] !== (int)$_SESSION['user_id']) {
+if (!$canManageTask && (int) $task['assigned_to'] !== $userId) {
     echo '<p style="color: var(--polaris-danger);">You do not have permission to edit this task.</p>';
     exit();
 }
@@ -70,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $job_ref_error = false;
 
-    if ($role == 'admin' || $role == 'super') {
+    if ($canManageTask) {
         $assigned_to = intval($_POST['assigned_to']);
         $custom_ref = trim($_POST['custom_ref']);
         $description = mysqli_real_escape_string($conn, $_POST['description']);
@@ -116,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = '<p style="color: var(--polaris-success-strong);">Task updated successfully.</p>';
 
             // If assigned_to has changed, create a notification
-            if (($role == 'admin' || $role == 'super') && isset($assigned_to) && $assigned_to != $original_assigned_to) {
+            if ($canManageTask && isset($assigned_to) && $assigned_to != $original_assigned_to) {
                 $notif_message = "Task Reassigned: " . $task['task_ref'];
                 $insert_notif = "INSERT INTO notifications (user_id, type, message)
                              VALUES ('$assigned_to', 'task_reassigned', '$notif_message')";
@@ -153,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <form method="POST"
         action="edit_task.php?id=<?php echo $task_id; ?><?php echo $embedded ? '&embedded=1' : ''; ?>">
 
-        <?php if ($role == 'admin' || $role == 'super') { ?>
+        <?php if ($canManageTask) { ?>
         <div style="margin-bottom: 15px;">
             <label for="description">Task Description:</label><br>
             <textarea name="description" id="description" rows="5"

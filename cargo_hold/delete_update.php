@@ -43,7 +43,12 @@ if ($reason === false) {
 // Snapshot before removing the row - the only place the deleted content survives.
 $changes = json_encode([
     'Update ID' => $update_id,
-    'Deleted Update' => ['Type' => $update['update_type'], 'Text' => $update['update_text']],
+    'Deleted Update' => [
+        'Type' => $update['update_type'],
+        'Communication Type' => $update['comm_type'],
+        'Communication With' => $update['comm_person'],
+        'Text' => $update['update_text'],
+    ],
     'Reason' => $reason,
 ]);
 

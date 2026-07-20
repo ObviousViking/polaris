@@ -157,7 +157,7 @@ if (!empty($allExhibitIds)) {
 // Case updates (both types).
 $updates = [];
 $stmt = $conn->prepare("
-    SELECT cu.update_type, cu.update_text, cu.update_date, CONCAT(u.first_name, ' ', u.last_name) AS author_name
+    SELECT cu.update_type, cu.comm_type, cu.comm_person, cu.update_text, cu.update_date, CONCAT(u.first_name, ' ', u.last_name) AS author_name
     FROM case_updates cu
     JOIN users u ON cu.user_id = u.id
     WHERE cu.job_id = ?
@@ -850,7 +850,11 @@ include '../header.php';
             <?php foreach ($updates as $update): ?>
             <div class="report-update" data-type="<?php echo htmlspecialchars($update['update_type']); ?>">
                 <div class="update-meta">
-                    <?php echo htmlspecialchars($update['update_type']); ?> &middot;
+                    <?php echo htmlspecialchars($update['update_type']); ?>
+                    <?php if ($update['update_type'] === 'Communication' && ($update['comm_type'] || $update['comm_person'])): ?>
+                    (<?php echo htmlspecialchars($update['comm_type'] ?? ''); ?><?php echo $update['comm_person'] ? ' &ndash; ' . htmlspecialchars($update['comm_person']) : ''; ?>)
+                    <?php endif; ?>
+                    &middot;
                     <?php echo htmlspecialchars($update['author_name']); ?> &middot;
                     <?php echo htmlspecialchars($update['update_date']); ?>
                 </div>

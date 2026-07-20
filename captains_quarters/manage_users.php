@@ -98,7 +98,8 @@ $result = $conn->query($query);
                 <td><?php echo htmlspecialchars($user['role']); ?></td>
                 <td><?php echo $user['active'] ? 'Active' : 'Inactive'; ?></td>
                 <td>
-                    <button class="edit-btn" data-user-id="<?php echo $user['id']; ?>">Edit</button>
+                    <a href="user_details.php?id=<?php echo $user['id']; ?>" class="edit-btn" target="_blank"
+                        onclick="window.open(this.href, 'editUser', 'width=700,height=650'); return false;">Edit</a>
                     <form method="post" style="display: inline;"
                         onsubmit="return confirm('Reset password to default (Password1!)?');">
                         <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
@@ -109,14 +110,6 @@ $result = $conn->query($query);
             <?php endwhile; ?>
         </tbody>
     </table>
-</div>
-
-<!-- Popup Container -->
-<div id="editPopup" class="popup">
-    <div class="popup-content">
-        <span class="close-btn">×</span>
-        <iframe id="userDetailsFrame" src=""></iframe>
-    </div>
 </div>
 
 <style>
@@ -194,6 +187,8 @@ body {
     border-radius: 3px;
     cursor: pointer;
     margin-right: 5px;
+    display: inline-block;
+    text-decoration: none;
 }
 
 .edit-btn:hover {
@@ -207,43 +202,6 @@ body {
 
 .reset-btn:hover {
     background: var(--polaris-danger);
-}
-
-/* Popup Styles */
-.popup {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-}
-
-.popup-content {
-    position: relative;
-    background: var(--polaris-bg-alt);
-    margin: 10% auto;
-    padding: 20px;
-    width: 80%;
-    max-width: 600px;
-    border-radius: 4px;
-}
-
-.close-btn {
-    position: absolute;
-    top: 10px;
-    right: 15px;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--polaris-text);
-}
-
-#userDetailsFrame {
-    width: 100%;
-    border: none;
-    height: auto;
 }
 
 .message.success {
@@ -267,38 +225,9 @@ body {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const editButtons = document.querySelectorAll('.edit-btn');
-    const popup = document.getElementById('editPopup');
-    const closeBtn = document.querySelector('.close-btn');
-    const iframe = document.getElementById('userDetailsFrame');
     const searchInput = document.getElementById('search');
     const tableBody = document.getElementById('userTableBody');
     const rows = tableBody.getElementsByTagName('tr');
-
-    // Popup handling
-    editButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const userId = this.getAttribute('data-user-id');
-            iframe.src = 'user_details.php?id=' + userId;
-            popup.style.display = 'block';
-            iframe.onload = function() {
-                const contentHeight = iframe.contentWindow.document.body.scrollHeight;
-                iframe.style.height = contentHeight + 'px';
-            };
-        });
-    });
-
-    closeBtn.addEventListener('click', function() {
-        popup.style.display = 'none';
-        iframe.src = '';
-    });
-
-    window.addEventListener('click', function(event) {
-        if (event.target === popup) {
-            popup.style.display = 'none';
-            iframe.src = '';
-        }
-    });
 
     // Search functionality
     searchInput.addEventListener('input', function() {

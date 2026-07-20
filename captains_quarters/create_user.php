@@ -21,12 +21,15 @@ if ($embedded) {
 $message = "";
 $message_type = ""; // Will be "success" or "error"
 
+$roles = get_all_roles($conn);
+$assignableRoleKeys = array_column($roles, 'role_key');
+
 if ($_SERVER['REQUEST_METHOD'] === "POST") {
     // Retrieve and sanitize form inputs
     $first_name = trim($_POST['first_name']);
     $last_name  = trim($_POST['last_name']);
     $email      = trim($_POST['email']);
-    $role_new   = trim($_POST['role']);  // Expected values: user or admin
+    $role_new   = trim($_POST['role']);
     $default_password = "Password1!";    // Default password
 
     // Basic validation
@@ -35,6 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === "POST") {
         $message_type = "error";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $message = "Invalid email address.";
+        $message_type = "error";
+    } elseif (!in_array($role_new, $assignableRoleKeys, true)) {
+        $message = "Invalid role.";
         $message_type = "error";
     } else {
         // Check if the email is already registered
@@ -90,8 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === "POST") {
             <label for="role">User Role:</label>
             <select name="role" id="role" required>
                 <option value="">Select Role</option>
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
+                <?php foreach ($roles as $r): ?>
+                <option value="<?php echo htmlspecialchars($r['role_key']); ?>">
+                    <?php echo htmlspecialchars($r['label']); ?></option>
+                <?php endforeach; ?>
             </select>
         </div>
         <div>

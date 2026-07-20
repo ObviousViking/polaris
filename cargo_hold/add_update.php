@@ -16,21 +16,33 @@ if (!isset($_GET['job_id'])) {
 $job_id = intval($_GET['job_id']);
 
 $validTypes = ['Case Update', 'Communication'];
+$validCommTypes = ['Email', 'Phone', 'In Person', 'Other'];
 $message = "";
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $update_text = trim($_POST['update_text']);
     $update_type = in_array($_POST['update_type'] ?? '', $validTypes, true) ? $_POST['update_type'] : 'Case Update';
+    $comm_type = null;
+    $comm_person = null;
+    if ($update_type === 'Communication') {
+        $comm_type = in_array($_POST['comm_type'] ?? '', $validCommTypes, true) ? $_POST['comm_type'] : null;
+        $comm_person = trim($_POST['comm_person'] ?? '');
+    }
     if (empty($update_text)) {
         $message = "Please enter update text.";
+    } elseif ($update_type === 'Communication' && ($comm_type === null || $comm_person === '')) {
+        $message = "Please select a communication type and enter who it was with.";
     } else {
+        if ($comm_person === '') {
+            $comm_person = null;
+        }
         $user_id = $_SESSION['user_id'];
         $update_date = date('Y-m-d H:i:s');
-        $stmt = $conn->prepare("INSERT INTO case_updates (job_id, user_id, update_type, update_text, update_date) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("iisss", $job_id, $user_id, $update_type, $update_text, $update_date);
+        $stmt = $conn->prepare("INSERT INTO case_updates (job_id, user_id, update_type, comm_type, comm_person, update_text, update_date) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("iisssss", $job_id, $user_id, $update_type, $comm_type, $comm_person, $update_text, $update_date);
         if ($stmt->execute()) {
             $updateId = $conn->insert_id;
-            $changes = json_encode(['Update ID' => $updateId, 'Type' => $update_type, 'Text' => $update_text]);
+            $changes = json_encode(['Update ID' => $updateId, 'Type' => $update_type, 'Communication Type' => $comm_type, 'Communication With' => $comm_person, 'Text' => $update_text]);
             insert_history_row($conn, 'case_history', $job_id, 'CASE_UPDATE_ADDED', (int) $user_id, $changes);
 
             echo "<script>
@@ -99,7 +111,8 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
         color: var(--polaris-text-dim);
     }
 
-    select {
+    select,
+    input[type="text"] {
         width: 100%;
         padding: 8px;
         margin-bottom: 15px;
@@ -107,6 +120,7 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
         color: var(--polaris-text);
         border: 1px solid var(--polaris-border);
         border-radius: 3px;
+        box-sizing: border-box;
     }
 
     input[type="submit"] {
@@ -161,7 +175,15 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
             document.getElementById('update_text').value = html;
             return true;
         };
+
+        toggleCommFields();
+        document.getElementById('update_type').addEventListener('change', toggleCommFields);
     });
+
+    function toggleCommFields() {
+        var isComm = document.getElementById('update_type').value === 'Communication';
+        document.getElementById('comm_fields').style.display = isComm ? '' : 'none';
+    }
     </script>
 </head>
 
@@ -178,6 +200,16 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
                 <option value="<?php echo htmlspecialchars($type); ?>"><?php echo htmlspecialchars($type); ?></option>
                 <?php endforeach; ?>
             </select>
+            <div id="comm_fields" style="display:none;">
+                <label for="comm_type">Communication Type</label>
+                <select id="comm_type" name="comm_type">
+                    <?php foreach ($validCommTypes as $ctype): ?>
+                    <option value="<?php echo htmlspecialchars($ctype); ?>"><?php echo htmlspecialchars($ctype); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <label for="comm_person">Person</label>
+                <input type="text" id="comm_person" name="comm_person" placeholder="Who was this communication with?">
+            </div>
             <!-- Hidden textarea to hold the editor's content -->
             <textarea id="update_text" name="update_text" style="display:none;"></textarea>
             <!-- Div that becomes the Quill editor -->

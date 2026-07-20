@@ -19,6 +19,16 @@ if (isset($_SESSION['user_id'])) {
 
 <head>
     <meta charset="UTF-8">
+    <script>
+    // Pages inside the System Management iframes (Manage Users, Backup/Restore,
+    // etc.) redirect here whenever the session is invalid - e.g. a DB restore
+    // destroys the session. Left alone, that navigation happens inside the
+    // small iframe, showing the full login screen shrunk into that panel
+    // while the surrounding nav stays put. Break out to the top window instead.
+    if (window.top !== window.self) {
+        window.top.location.href = window.location.href;
+    }
+    </script>
     <title>Polaris Login</title>
     <link rel="stylesheet" href="/assets/theme.css">
     <style>

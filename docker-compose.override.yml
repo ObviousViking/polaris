@@ -1,3 +1,13 @@
 services:
   app:
     build: .
+  db:
+    # MySQL data dirs can't be safely bind-mounted onto a Windows host path
+    # once initialized (case-sensitivity mismatch between the Linux-native
+    # data dictionary and a case-insensitive Windows filesystem breaks
+    # startup) - keep it on a Docker-managed named volume instead.
+    volumes:
+      - polaris_db_data:/var/lib/mysql
+
+volumes:
+  polaris_db_data:

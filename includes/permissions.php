@@ -205,6 +205,111 @@ function grandfather_existing_users(mysqli $conn): void
     $conn->query("INSERT INTO settings (setting_key, setting_value) VALUES ('permissions_grandfathered', '1') ON DUPLICATE KEY UPDATE setting_value = '1'");
 }
 
+// One-time-per-role seed of the built-in roles into the roles catalog.
+// Uses INSERT IGNORE so it never overwrites a label an admin has since
+// customized. 'super' is included here for completeness/display purposes
+// only - it's never offered on a role dropdown (see get_all_roles()) since
+// it bypasses every permission check and can't be assigned through the UI.
+function sync_roles_catalog(mysqli $conn): void
+{
+    $result = @$conn->query("SELECT COUNT(*) AS c FROM roles");
+    if (!$result) {
+        return; // table doesn't exist yet
+    }
+    $stmt = $conn->prepare("INSERT IGNORE INTO roles (role_key, label, is_builtin) VALUES (?, ?, 1)");
+    if (!$stmt) {
+        return;
+    }
+    foreach (['user' => 'User', 'admin' => 'Admin', 'super' => 'Super'] as $key => $label) {
+        $stmt->bind_param("ss", $key, $label);
+        $stmt->execute();
+    }
+    $stmt->close();
+}
+
+// All assignable roles (built-in and custom), for populating role
+// dropdowns and the Manage Role Permissions tabs. Excludes 'super' - it
+// has no editable bundle and can't be assigned through the UI.
+function get_all_roles(mysqli $conn): array
+{
+    $roles = [];
+    $result = $conn->query("SELECT role_key, label, is_builtin FROM roles WHERE role_key != 'super' ORDER BY is_builtin DESC, label ASC");
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $roles[] = $row;
+        }
+    }
+    return $roles;
+}
+
+// Creates a new custom role. Returns an error string, or null on success.
+function create_role(mysqli $conn, string $roleKey, string $label): ?string
+{
+    if (!preg_match('/^[a-z][a-z0-9_]{0,49}$/', $roleKey)) {
+        return "Role key must start with a lowercase letter and contain only lowercase letters, numbers, and underscores.";
+    }
+    if (trim($label) === '') {
+        return "Display label is required.";
+    }
+
+    $stmt = $conn->prepare("SELECT 1 FROM roles WHERE role_key = ? LIMIT 1");
+    $stmt->bind_param("s", $roleKey);
+    $stmt->execute();
+    $stmt->store_result();
+    $exists = $stmt->num_rows > 0;
+    $stmt->close();
+    if ($exists) {
+        return "A role with that key already exists.";
+    }
+
+    $trimmedLabel = trim($label);
+    $stmt = $conn->prepare("INSERT INTO roles (role_key, label, is_builtin) VALUES (?, ?, 0)");
+    $stmt->bind_param("ss", $roleKey, $trimmedLabel);
+    $stmt->execute();
+    $stmt->close();
+    return null;
+}
+
+// Deletes a custom (non-builtin) role, provided no users currently hold
+// it. Returns an error string, or null on success.
+function delete_role(mysqli $conn, string $roleKey): ?string
+{
+    $stmt = $conn->prepare("SELECT is_builtin FROM roles WHERE role_key = ? LIMIT 1");
+    $stmt->bind_param("s", $roleKey);
+    $stmt->execute();
+    $stmt->bind_result($isBuiltin);
+    $found = $stmt->fetch();
+    $stmt->close();
+    if (!$found) {
+        return "Role not found.";
+    }
+    if ($isBuiltin) {
+        return "Built-in roles can't be deleted.";
+    }
+
+    $stmt = $conn->prepare("SELECT COUNT(*) FROM users WHERE role = ?");
+    $stmt->bind_param("s", $roleKey);
+    $stmt->execute();
+    $stmt->bind_result($userCount);
+    $stmt->fetch();
+    $stmt->close();
+    if ($userCount > 0) {
+        return "Can't delete - $userCount user(s) still have this role. Reassign them first.";
+    }
+
+    $del = $conn->prepare("DELETE FROM role_default_permissions WHERE role = ?");
+    $del->bind_param("s", $roleKey);
+    $del->execute();
+    $del->close();
+
+    $del = $conn->prepare("DELETE FROM roles WHERE role_key = ?");
+    $del->bind_param("s", $roleKey);
+    $del->execute();
+    $del->close();
+
+    return null;
+}
+
 // All permissions grouped by category, in sort_order, for rendering a
 // checkbox list (used by user_details.php and manage_role_permissions.php).
 function get_all_permissions_grouped(mysqli $conn): array

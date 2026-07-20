@@ -31,14 +31,26 @@ if (!$update) {
 
 $job_id = (int) $update['job_id'];
 $validTypes = ['Case Update', 'Communication'];
+$validCommTypes = ['Email', 'Phone', 'In Person', 'Other'];
 $message = "";
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $update_text = trim($_POST['update_text']);
     $update_type = in_array($_POST['update_type'] ?? '', $validTypes, true) ? $_POST['update_type'] : 'Case Update';
+    $comm_type = null;
+    $comm_person = null;
+    if ($update_type === 'Communication') {
+        $comm_type = in_array($_POST['comm_type'] ?? '', $validCommTypes, true) ? $_POST['comm_type'] : null;
+        $comm_person = trim($_POST['comm_person'] ?? '');
+    }
     if (empty($update_text)) {
         $message = "Please enter update text.";
+    } elseif ($update_type === 'Communication' && ($comm_type === null || $comm_person === '')) {
+        $message = "Please select a communication type and enter who it was with.";
     } else {
+        if ($comm_person === '') {
+            $comm_person = null;
+        }
         $user_id = (int) $_SESSION['user_id'];
         $now = date('Y-m-d H:i:s');
 
@@ -46,11 +58,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $changes = json_encode([
             'Update ID' => $update_id,
             'Type' => ['old' => $update['update_type'], 'new' => $update_type],
+            'Communication Type' => ['old' => $update['comm_type'], 'new' => $comm_type],
+            'Communication With' => ['old' => $update['comm_person'], 'new' => $comm_person],
             'Text' => ['old' => $update['update_text'], 'new' => $update_text],
         ]);
 
-        $stmt = $conn->prepare("UPDATE case_updates SET update_type = ?, update_text = ?, updated_at = ?, updated_by = ? WHERE update_id = ?");
-        $stmt->bind_param("sssii", $update_type, $update_text, $now, $user_id, $update_id);
+        $stmt = $conn->prepare("UPDATE case_updates SET update_type = ?, comm_type = ?, comm_person = ?, update_text = ?, updated_at = ?, updated_by = ? WHERE update_id = ?");
+        $stmt->bind_param("sssssii", $update_type, $comm_type, $comm_person, $update_text, $now, $user_id, $update_id);
         if ($stmt->execute()) {
             insert_history_row($conn, 'case_history', $job_id, 'CASE_UPDATE_EDITED', $user_id, $changes);
 
@@ -110,7 +124,8 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
         color: var(--polaris-text-dim);
     }
 
-    select {
+    select,
+    input[type="text"] {
         width: 100%;
         padding: 8px;
         margin-bottom: 15px;
@@ -118,6 +133,7 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
         color: var(--polaris-text);
         border: 1px solid var(--polaris-border);
         border-radius: 3px;
+        box-sizing: border-box;
     }
 
     #editor-container {
@@ -168,6 +184,16 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
                 <option value="<?php echo htmlspecialchars($type); ?>" <?php echo $update['update_type'] === $type ? 'selected' : ''; ?>><?php echo htmlspecialchars($type); ?></option>
                 <?php endforeach; ?>
             </select>
+            <div id="comm_fields" style="display:none;">
+                <label for="comm_type">Communication Type</label>
+                <select id="comm_type" name="comm_type">
+                    <?php foreach ($validCommTypes as $ctype): ?>
+                    <option value="<?php echo htmlspecialchars($ctype); ?>" <?php echo $update['comm_type'] === $ctype ? 'selected' : ''; ?>><?php echo htmlspecialchars($ctype); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <label for="comm_person">Person</label>
+                <input type="text" id="comm_person" name="comm_person" placeholder="Who was this communication with?" value="<?php echo htmlspecialchars($update['comm_person'] ?? ''); ?>">
+            </div>
             <textarea id="update_text" name="update_text" style="display:none;"><?php echo htmlspecialchars($update['update_text']); ?></textarea>
             <div id="editor-container"></div>
             <input type="submit" value="Save Changes">
@@ -194,7 +220,15 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
             hidden.value = quill.root.innerHTML;
             return true;
         };
+
+        toggleCommFields();
+        document.getElementById('update_type').addEventListener('change', toggleCommFields);
     });
+
+    function toggleCommFields() {
+        var isComm = document.getElementById('update_type').value === 'Communication';
+        document.getElementById('comm_fields').style.display = isComm ? '' : 'none';
+    }
     </script>
 </body>
 
