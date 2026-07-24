@@ -26,6 +26,7 @@ $caseChain = verify_history_chain($conn, 'case_history');
 $exhibitChain = verify_history_chain($conn, 'exhibit_history');
 $auditChain = verify_history_chain($conn, 'audit_log');
 $processChain = verify_history_chain($conn, 'exhibit_process_history');
+$exportedItemChain = verify_history_chain($conn, 'exported_item_history');
 
 function fetch_recent_history(mysqli $conn, string $table, string $refCol, int $limit = 25): array
 {
@@ -68,6 +69,7 @@ function fetch_recent_audit_log(mysqli $conn, int $limit = 50): array
 
 $recentCaseHistory = fetch_recent_history($conn, 'case_history', 'job_id');
 $recentExhibitHistory = fetch_recent_history($conn, 'exhibit_history', 'exhibit_id');
+$recentExportedItemHistory = fetch_recent_history($conn, 'exported_item_history', 'item_id');
 $recentAuditLog = fetch_recent_audit_log($conn);
 ?>
 
@@ -76,10 +78,10 @@ $recentAuditLog = fetch_recent_audit_log($conn);
 
     <div class="explainer">
         <p><strong>What this checks:</strong> case history (which also covers case update
-            add/edit/delete events), exhibit history, exhibit process history, and the system/admin
-            activity log (the audit trail of who changed what, and when) are each chained with two
-            independent layers, so an edited or deleted historical record is detectable rather than
-            silently accepted:</p>
+            add/edit/delete events), exhibit history, exhibit process history, exported item history
+            (including handovers to review teams), and the system/admin activity log (the audit trail
+            of who changed what, and when) are each chained with two independent layers, so an edited
+            or deleted historical record is detectable rather than silently accepted:</p>
         <ol>
             <li><strong>Hash chain</strong> - each row stores a SHA-256 hash covering its own
                 fields plus the previous row's hash, computed automatically by a database trigger.
@@ -97,10 +99,10 @@ $recentAuditLog = fetch_recent_audit_log($conn);
             that requires anchoring the chain outside this database's control entirely (e.g.
             periodically exporting the latest hash somewhere this database admin doesn't control),
             which isn't implemented. Also worth knowing: <code>case_history</code>,
-            <code>exhibit_history</code>, and <code>audit_log</code> rows can't normally be edited
-            or deleted at all - the database rejects it outright - so a broken chain below means
-            someone bypassed that (e.g. disabled the trigger first), not an accident during normal
-            use.</p>
+            <code>exhibit_history</code>, <code>exported_item_history</code>, and <code>audit_log</code>
+            rows can't normally be edited or deleted at all - the database rejects it outright - so a
+            broken chain below means someone bypassed that (e.g. disabled the trigger first), not an
+            accident during normal use.</p>
     </div>
 
     <div class="chain-status">
@@ -163,6 +165,21 @@ $recentAuditLog = fetch_recent_audit_log($conn);
                 <?php echo htmlspecialchars(implode(', ', $processChain['broken_hmac']) ?: 'none'); ?></p>
             <?php endif; ?>
         </div>
+
+        <div class="chain-card <?php echo $exportedItemChain['ok'] ? 'chain-ok' : 'chain-bad'; ?>">
+            <h3>Exported Item History</h3>
+            <?php if ($exportedItemChain['error']): ?>
+            <p class="chain-headline">Error checking chain: <?php echo htmlspecialchars($exportedItemChain['error']); ?></p>
+            <?php elseif ($exportedItemChain['ok']): ?>
+            <p class="chain-headline">&#10003; All <?php echo (int) $exportedItemChain['total']; ?> records verified</p>
+            <?php else: ?>
+            <p class="chain-headline">&#10007; Tampering detected</p>
+            <p class="chain-detail">Hash chain broken at record(s):
+                <?php echo htmlspecialchars(implode(', ', $exportedItemChain['broken_hash']) ?: 'none'); ?></p>
+            <p class="chain-detail">HMAC broken at record(s):
+                <?php echo htmlspecialchars(implode(', ', $exportedItemChain['broken_hmac']) ?: 'none'); ?></p>
+            <?php endif; ?>
+        </div>
     </div>
 
     <p style="margin-top:20px;"><a href="javascript:location.reload()" class="action-btn">Re-check now</a></p>
@@ -215,6 +232,36 @@ $recentAuditLog = fetch_recent_audit_log($conn);
             </tr>
             <?php else: ?>
             <?php foreach ($recentExhibitHistory as $row): ?>
+            <tr>
+                <td><?php echo (int) $row['id']; ?></td>
+                <td><?php echo (int) $row['ref_id']; ?></td>
+                <td><?php echo action_badge($row['action']); ?></td>
+                <td><?php echo htmlspecialchars($row['changed_by_name'] ?? ''); ?></td>
+                <td><?php echo htmlspecialchars($row['changed_at']); ?></td>
+            </tr>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+
+    <h3 style="margin-top:30px;">Recent Exported Item History</h3>
+    <table class="logs-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Item ID</th>
+                <th>Action</th>
+                <th>Changed By</th>
+                <th>Changed At</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($recentExportedItemHistory)): ?>
+            <tr>
+                <td colspan="5">No exported item history yet.</td>
+            </tr>
+            <?php else: ?>
+            <?php foreach ($recentExportedItemHistory as $row): ?>
             <tr>
                 <td><?php echo (int) $row['id']; ?></td>
                 <td><?php echo (int) $row['ref_id']; ?></td>

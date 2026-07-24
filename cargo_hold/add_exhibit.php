@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../db.php';
 require_once '../includes/integrity.php';
 require_once '../includes/permissions.php';
+require_once '../includes/exhibit_receipts.php';
 require_permission($conn, 'exhibit_create');
 
 // Ensure a job_id is provided
@@ -193,10 +194,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         check_and_unlock_achievements($conn, (int) $_SESSION['user_id'], 'exhibits_booked_in');
 
         if ($generate_receipt) {
-            $idsStr = implode(',', $inserted_ids);
-            $receiptURL = "exhibit_receipt.php?ids=" . urlencode($idsStr) .
-                        "&job_id=" . urlencode($job_id) .
-                        "&type=in";
+            $receiptId = save_exhibit_receipt($conn, $job_id, 'in', $inserted_ids, (int) $_SESSION['user_id']);
+            $receiptURL = $receiptId
+                ? "view_receipt.php?receipt_id=" . urlencode($receiptId)
+                : "exhibit_receipt.php?ids=" . urlencode(implode(',', $inserted_ids)) .
+                  "&job_id=" . urlencode($job_id) . "&type=in";
             // A real link avoids popup-blocker issues that window.open() would hit here.
             include '../header.php';
             ?>

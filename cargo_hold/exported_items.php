@@ -5,7 +5,7 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once '../db.php';
-require_once '../includes/audit.php';
+require_once '../includes/integrity.php';
 require_once '../includes/permissions.php';
 require_permission($conn, 'exhibit_edit');
 require_once '../header.php';
@@ -16,6 +16,17 @@ if (!isset($_GET['job_id'])) {
 }
 $job_id = intval($_GET['job_id']);
 $message = "";
+
+// Exhibits this item could be a working copy of, for traceability.
+$exhibits = [];
+$exStmt = $conn->prepare("SELECT exhibit_id, exhibit_ref FROM exhibits WHERE job_id = ? AND deleted_at IS NULL ORDER BY exhibit_ref");
+$exStmt->bind_param("i", $job_id);
+$exStmt->execute();
+$exResult = $exStmt->get_result();
+while ($row = $exResult->fetch_assoc()) {
+    $exhibits[] = $row;
+}
+$exStmt->close();
 
 // Fetch logged-in user's ID and name
 $user_id = intval($_SESSION['user_id']);
@@ -47,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $status = $_POST['status'];
     $extracted_on = $_POST['extracted_on'] ?: date('Y-m-d');
     $assigned_to_id = !empty($_POST['assigned_to']) ? intval($_POST['assigned_to']) : null;
+    $source_exhibit_id = !empty($_POST['source_exhibit_id']) ? intval($_POST['source_exhibit_id']) : null;
 
     if ($extraction_ref === '') {
         $message = "Extraction reference is required.";
@@ -64,13 +76,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Extraction reference already exists for this job.";
         } else {
             $stmt = $conn->prepare("
-                INSERT INTO exported_items (job_id, extraction_ref, description, status, extracted_on, extracted_by, assigned_to)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO exported_items (job_id, source_exhibit_id, extraction_ref, description, status, extracted_on, extracted_by, assigned_to)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt->bind_param("isssssi", $job_id, $extraction_ref, $description, $status, $extracted_on, $extracted_by_id, $assigned_to_id);
+            $stmt->bind_param("iissssii", $job_id, $source_exhibit_id, $extraction_ref, $description, $status, $extracted_on, $extracted_by_id, $assigned_to_id);
             if ($stmt->execute()) {
                 $newItemId = $conn->insert_id;
-                log_audit_event($conn, 'exported_item', $newItemId, 'CREATE', (int) $_SESSION['user_id'], json_encode(['extraction_ref' => $extraction_ref, 'description' => $description, 'status' => $status, 'assigned_to' => $assigned_to_id]));
+                $sourceExhibitRef = '';
+                foreach ($exhibits as $ex) {
+                    if ($ex['exhibit_id'] == $source_exhibit_id) {
+                        $sourceExhibitRef = $ex['exhibit_ref'];
+                        break;
+                    }
+                }
+                insert_history_row($conn, 'exported_item_history', $newItemId, 'CREATE', (int) $_SESSION['user_id'], json_encode([
+                    'extraction_ref' => $extraction_ref,
+                    'description' => $description,
+                    'status' => $status,
+                    'source_exhibit' => $sourceExhibitRef,
+                    'assigned_to' => $assigned_to_id,
+                ]));
                 $message = "Exported item added successfully.";
             } else {
                 $message = "Error adding exported item.";
@@ -197,6 +222,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label for="extraction_ref">Extraction Reference</label>
             <input type="text" name="extraction_ref" id="extraction_ref"
                 oninput="this.value = this.value.toUpperCase();" required>
+            <label for="source_exhibit_id">Source Exhibit</label>
+            <select name="source_exhibit_id" id="source_exhibit_id">
+                <option value="">None / not derived from a single exhibit</option>
+                <?php foreach ($exhibits as $ex): ?>
+                <option value="<?php echo $ex['exhibit_id']; ?>">
+                    <?php echo htmlspecialchars($ex['exhibit_ref']); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
             <label for="description">Description</label>
             <input type="text" name="description" id="description">
             <label for="status">Status</label>

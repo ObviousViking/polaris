@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once('../db.php');
 require_once('../includes/integrity.php');
 require_once '../includes/permissions.php';
+require_once '../includes/exhibit_receipts.php';
 require_permission($conn, 'exhibit_edit');
 
 // Ensure a job_id is provided.
@@ -79,11 +80,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
             $updateStmt->close();
             if (empty($message)) {
-                $ids = implode(',', $updated_ids);
-                $receiptURL = "exhibit_receipt.php?ids=" . urlencode($ids) .
-              "&job_id=" . urlencode($job_id) .
-              "&type=out" .
-              "&booked_out_to=" . urlencode($bookedOutTo);
+                $receiptId = save_exhibit_receipt($conn, $job_id, 'out', $updated_ids, (int) $_SESSION['user_id'], $bookedOutTo);
+                $receiptURL = $receiptId
+                    ? "view_receipt.php?receipt_id=" . urlencode($receiptId)
+                    : "exhibit_receipt.php?ids=" . urlencode(implode(',', $updated_ids)) .
+                      "&job_id=" . urlencode($job_id) . "&type=out" .
+                      "&booked_out_to=" . urlencode($bookedOutTo);
 
                 // A real link avoids popup-blocker issues window.open() would hit here.
                 include('../header.php');

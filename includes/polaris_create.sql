@@ -338,7 +338,7 @@ CREATE TABLE `exhibit_history` (
   -- restore_exhibit.php - exhibits are never hard-deleted (see the
   -- deleted_at/deleted_by columns on `exhibits` below), so these record the
   -- delete/undo events themselves rather than removing rows.
-  `action` enum('BOOK_IN','BOOK_OUT','UPDATE','DELETE','RESTORE') NOT NULL,
+  `action` enum('BOOK_IN','BOOK_OUT','UPDATE','DELETE','RESTORE','RETURN') NOT NULL,
   `changed_by` int NOT NULL,
   `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `changes` text,
@@ -420,6 +420,46 @@ CREATE TABLE `exhibit_photos` (
   KEY `exhibit_id` (`exhibit_id`),
   KEY `uploaded_by` (`uploaded_by`)
 ) ENGINE=MyISAM AUTO_INCREMENT=108 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `exhibit_receipts`
+--
+
+DROP TABLE IF EXISTS `exhibit_receipts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exhibit_receipts` (
+  `receipt_id` int NOT NULL AUTO_INCREMENT,
+  `job_id` int NOT NULL,
+  `receipt_type` enum('in','out','return') NOT NULL,
+  `booked_out_to` varchar(255) DEFAULT NULL,
+  `file_path` text NOT NULL,
+  `generated_by` int NOT NULL,
+  `generated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`receipt_id`),
+  KEY `job_id` (`job_id`),
+  KEY `generated_by` (`generated_by`),
+  CONSTRAINT `fk_exhibit_receipts_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`job_id`),
+  CONSTRAINT `fk_exhibit_receipts_user` FOREIGN KEY (`generated_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `exhibit_receipt_items`
+--
+
+DROP TABLE IF EXISTS `exhibit_receipt_items`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exhibit_receipt_items` (
+  `receipt_id` int NOT NULL,
+  `exhibit_id` int NOT NULL,
+  PRIMARY KEY (`receipt_id`, `exhibit_id`),
+  KEY `exhibit_id` (`exhibit_id`),
+  CONSTRAINT `fk_exhibit_receipt_items_receipt` FOREIGN KEY (`receipt_id`) REFERENCES `exhibit_receipts` (`receipt_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_exhibit_receipt_items_exhibit` FOREIGN KEY (`exhibit_id`) REFERENCES `exhibits` (`exhibit_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -629,21 +669,89 @@ DROP TABLE IF EXISTS `exported_items`;
 CREATE TABLE `exported_items` (
   `item_id` int NOT NULL AUTO_INCREMENT,
   `job_id` int NOT NULL,
+  -- Which exhibit this working copy was derived from, for traceability
+  -- (FSR Code of Practice s.25.2.8) - nullable since not every item
+  -- necessarily traces to a single exhibit.
+  `source_exhibit_id` int DEFAULT NULL,
   `extraction_ref` varchar(50) NOT NULL,
   `description` varchar(255) DEFAULT NULL,
   `status` enum('Awaiting Review','Being Reviewed','Reviewed','Not Reviewed') DEFAULT 'Awaiting Review',
   `extracted_on` date DEFAULT NULL,
   `extracted_by` int DEFAULT NULL,
   `assigned_to` int DEFAULT NULL,
+  -- Quick-glance summary of the most recent handover - the full history of
+  -- every handover lives in exported_item_history below.
+  `last_handed_to` varchar(255) DEFAULT NULL,
+  `last_handed_to_at` datetime DEFAULT NULL,
   PRIMARY KEY (`item_id`),
   KEY `job_id` (`job_id`),
+  KEY `source_exhibit_id` (`source_exhibit_id`),
   KEY `extracted_by` (`extracted_by`),
   KEY `assigned_to` (`assigned_to`),
   CONSTRAINT `exported_items_ibfk_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`job_id`),
+  CONSTRAINT `fk_exported_items_exhibit` FOREIGN KEY (`source_exhibit_id`) REFERENCES `exhibits` (`exhibit_id`),
   CONSTRAINT `exported_items_ibfk_extracted` FOREIGN KEY (`extracted_by`) REFERENCES `users` (`id`),
   CONSTRAINT `exported_items_ibfk_assigned` FOREIGN KEY (`assigned_to`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `exported_item_history`
+--
+
+-- Append-only, hash-chained history for exported_items - mirrors
+-- exhibit_history (see includes/integrity.php). CREATE/UPDATE events plus a
+-- distinct HANDOVER action recording who an item was given to and when,
+-- per FSR Code of Practice s.25.2.1(a).
+
+DROP TABLE IF EXISTS `exported_item_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exported_item_history` (
+  `history_id` int NOT NULL AUTO_INCREMENT,
+  `item_id` int NOT NULL,
+  `action` enum('CREATE','UPDATE','HANDOVER') NOT NULL,
+  `changed_by` int NOT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `changes` text,
+  `prev_hash` char(64) NOT NULL,
+  `row_hash` char(64) NOT NULL,
+  `prev_hmac` char(64) NOT NULL,
+  `hmac_hash` char(64) NOT NULL,
+  PRIMARY KEY (`history_id`),
+  KEY `item_id` (`item_id`),
+  KEY `changed_by` (`changed_by`),
+  CONSTRAINT `fk_exported_item_history_item` FOREIGN KEY (`item_id`) REFERENCES `exported_items` (`item_id`),
+  CONSTRAINT `fk_exported_item_history_user` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TRIGGER IF EXISTS `exported_item_history_hash_chain`;
+CREATE TRIGGER `exported_item_history_hash_chain` BEFORE INSERT ON `exported_item_history`
+FOR EACH ROW
+BEGIN
+    DECLARE prev CHAR(64);
+    SELECT row_hash INTO prev FROM exported_item_history ORDER BY history_id DESC LIMIT 1;
+    IF prev IS NULL THEN
+        SET prev = REPEAT('0', 64);
+    END IF;
+    SET NEW.prev_hash = prev;
+    SET NEW.row_hash = SHA2(CONCAT_WS('|', NEW.item_id, NEW.action, NEW.changed_by, NEW.changed_at, IFNULL(NEW.changes, ''), prev), 256);
+END;
+
+DROP TRIGGER IF EXISTS `exported_item_history_no_update`;
+CREATE TRIGGER `exported_item_history_no_update` BEFORE UPDATE ON `exported_item_history`
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'exported_item_history is append-only and cannot be modified';
+END;
+
+DROP TRIGGER IF EXISTS `exported_item_history_no_delete`;
+CREATE TRIGGER `exported_item_history_no_delete` BEFORE DELETE ON `exported_item_history`
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'exported_item_history is append-only and cannot be deleted from';
+END;
 
 --
 -- Table structure for table `produced_exhibits`

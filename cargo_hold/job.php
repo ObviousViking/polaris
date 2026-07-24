@@ -6,6 +6,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../db.php';
 require_once '../includes/permissions.php';
+require_once '../includes/exhibit_receipts.php';
 require_permission($conn, 'case_view');
 
 // Ensure a job_id is provided.
@@ -122,6 +123,10 @@ while ($row = $resultEx->fetch_assoc()) {
 }
 $stmtEx->close();
 
+// Any saved book-in/book-out receipts covering these exhibits, for the
+// "View Receipt" links in the table below.
+$receiptsByExhibit = get_receipts_for_exhibits($conn, array_column($exhibits, 'exhibit_id'));
+
 // Deleted exhibits (admins only), shown separately from the working list.
 $deletedExhibits = [];
 if ($canDeleteExhibits) {
@@ -146,12 +151,14 @@ if ($canDeleteExhibits) {
 // Fetch exported items
 $exported_items = [];
 $stmt = $conn->prepare("
-    SELECT ei.*, 
+    SELECT ei.*,
            CONCAT(u1.first_name, ' ', u1.last_name) AS extracted_by_name,
-           CONCAT(u2.first_name, ' ', u2.last_name) AS assigned_to_name
+           CONCAT(u2.first_name, ' ', u2.last_name) AS assigned_to_name,
+           e.exhibit_ref AS source_exhibit_ref
     FROM exported_items ei
     LEFT JOIN users u1 ON ei.extracted_by = u1.id
     LEFT JOIN users u2 ON ei.assigned_to = u2.id
+    LEFT JOIN exhibits e ON ei.source_exhibit_id = e.exhibit_id
     WHERE ei.job_id = ?
     ORDER BY ei.extraction_ref
 ");
@@ -823,6 +830,7 @@ include '../header.php';
                         <th>Time Out / Location</th>
                         <th>Allocated To</th>
                         <th>Examine</th>
+                        <th>Receipts</th>
                         <?php if ($canDeleteExhibits): ?>
                         <th>Delete</th>
                         <?php endif; ?>
@@ -845,6 +853,12 @@ include '../header.php';
                             <a class="btn btn-small"
                                 href="/captains_log/examination.php?exhibit_id=<?= $ex['exhibit_id']; ?>">Examine</a>
                         </td>
+                        <td>
+                            <?php if (!empty($receiptsByExhibit[$ex['exhibit_id']])): ?>
+                            <a class="btn btn-small"
+                                href="view_exhibit_receipts.php?exhibit_id=<?= $ex['exhibit_id']; ?>">View</a>
+                            <?php endif; ?>
+                        </td>
                         <?php if ($canDeleteExhibits): ?>
                         <td>
                             <form method="post" action="delete_exhibit.php" style="display:inline;"
@@ -863,6 +877,7 @@ include '../header.php';
                 <?php endif; ?>
                 <a class="add-btn btn-add" href="add_exhibit.php?job_id=<?php echo $job_id; ?>">Add Exhibit</a>
                 <a class="add-btn" href="book_out_exhibits.php?job_id=<?php echo $job_id; ?>">Book Out Exhibit</a>
+                <a class="add-btn" href="book_in_exhibits.php?job_id=<?php echo $job_id; ?>">Book In Exhibit</a>
 
                 <?php if ($canDeleteExhibits && !empty($deletedExhibits)): ?>
                 <h4 style="margin-top:20px; color:var(--polaris-text-dim);">Deleted Exhibits</h4>
@@ -902,17 +917,20 @@ include '../header.php';
                     <thead>
                         <tr>
                             <th>Extraction Ref</th>
+                            <th>Source Exhibit</th>
                             <th>Description</th>
                             <th>Status</th>
                             <th>Extracted On</th>
                             <th>Extracted By</th>
                             <th>Assigned To</th>
+                            <th>Last Handed To</th>
+                            <th>History</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($exported_items)): ?>
                         <tr>
-                            <td colspan="6">No exported items added yet.</td>
+                            <td colspan="9">No exported items added yet.</td>
                         </tr>
                         <?php else: ?>
                         <?php foreach ($exported_items as $item): ?>
@@ -921,11 +939,22 @@ include '../header.php';
                                     href="edit_exported_item.php?item_id=<?php echo htmlspecialchars($item['item_id']); ?>&job_id=<?php echo htmlspecialchars($job_id); ?>">
                                     <?php echo htmlspecialchars($item['extraction_ref']); ?>
                                 </a></td>
+                            <td><?php echo htmlspecialchars($item['source_exhibit_ref'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['description'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['status'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['extracted_on'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['extracted_by_name'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['assigned_to_name'] ?? ''); ?></td>
+                            <td>
+                                <?php if (!empty($item['last_handed_to'])): ?>
+                                <?php echo htmlspecialchars($item['last_handed_to']); ?><br>
+                                <span style="color:var(--polaris-text-faint); font-size:12px;"><?php echo htmlspecialchars($item['last_handed_to_at']); ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <a class="btn btn-small"
+                                    href="view_exported_item_history.php?item_id=<?php echo $item['item_id']; ?>">View</a>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                         <?php endif; ?>
