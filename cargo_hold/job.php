@@ -772,6 +772,8 @@ include '../header.php';
                 <?php echo nl2br(htmlspecialchars($initial_summary ?? '')); ?>
             </div>
             <a class="edit-button" href="edit_job.php?job_id=<?php echo $job_id; ?>">Edit Case</a>
+            <a class="edit-button" href="case_report.php?job_id=<?php echo $job_id; ?>" target="_top"
+                style="margin-left:8px;">Case Report</a>
         </div>
 
         <div class="sidebar-box">
@@ -811,8 +813,6 @@ include '../header.php';
                     onclick="window.open(this.href, 'addUpdate', 'width=700,height=700,scrollbars=yes,resizable=yes'); return false;">Add Update</a>
                 <a class="edit-button" href="view_case_history.php?job_id=<?php echo $job_id; ?>"
                     style="margin-left:8px;">View Case History</a>
-                <a class="edit-button" href="case_report.php?job_id=<?php echo $job_id; ?>" target="_top"
-                    style="margin-left:8px;">Case Report</a>
             </div>
             <!-- Exhibits Section -->
             <div class="exhibits-section">

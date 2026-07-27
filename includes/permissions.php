@@ -31,8 +31,11 @@ const PERMISSION_DEFINITIONS = [
     ['key' => 'document_manage', 'label' => 'Manage Documents & Photos', 'description' => 'Upload, view, and download case and exhibit documents and photos.', 'category' => 'Documents & Photos', 'sort_order' => 40],
 
     // Asset Management
-    ['key' => 'asset_view', 'label' => 'View Assets', 'description' => 'View the asset register and asset activity log.', 'category' => 'Asset Management', 'sort_order' => 50],
-    ['key' => 'asset_manage', 'label' => 'Manage Assets', 'description' => 'Add, edit, check out, and log maintenance on assets.', 'category' => 'Asset Management', 'sort_order' => 51],
+    ['key' => 'asset_view', 'label' => 'View Assets', 'description' => 'View the asset register and asset history.', 'category' => 'Asset Management', 'sort_order' => 50],
+    ['key' => 'asset_manage', 'label' => 'Manage Assets', 'description' => 'Add and edit asset records.', 'category' => 'Asset Management', 'sort_order' => 51],
+    ['key' => 'asset_checkout', 'label' => 'Check Assets In/Out', 'description' => 'Check assets out to a user and back in again.', 'category' => 'Asset Management', 'sort_order' => 52],
+    ['key' => 'asset_maintenance', 'label' => 'Log Asset Maintenance', 'description' => 'Log maintenance, calibration, verification, and repair records, and view items with checks due.', 'category' => 'Asset Management', 'sort_order' => 53],
+    ['key' => 'asset_delete', 'label' => 'Delete Assets', 'description' => 'Delete and restore asset records.', 'category' => 'Asset Management', 'sort_order' => 54],
 
     // Lookup Data
     ['key' => 'manage_lookups', 'label' => 'Manage Lookup Data', 'description' => 'Create and edit case types, statuses, exhibit types, locations, customers, forces, and asset types/locations.', 'category' => 'Lookup Data', 'sort_order' => 60],
@@ -43,7 +46,7 @@ const PERMISSION_DEFINITIONS = [
     ['key' => 'task_manage', 'label' => 'Manage Tasks', 'description' => 'Create and edit tasks.', 'category' => 'Tasking', 'sort_order' => 71],
 
     // System Administration
-    ['key' => 'manage_users', 'label' => 'Manage Users', 'description' => 'Create users and edit user roles/permissions.', 'category' => 'System Administration', 'sort_order' => 80],
+    ['key' => 'manage_users', 'label' => 'Manage Users', 'description' => 'Create users and edit their profile details. Assigning a privileged role/permissions, or resetting a privileged account\'s password, also requires Manage Role Permissions.', 'category' => 'System Administration', 'sort_order' => 80],
     ['key' => 'manage_role_permissions', 'label' => 'Manage Role Permissions', 'description' => 'Edit the default permission bundle for each role.', 'category' => 'System Administration', 'sort_order' => 81],
     ['key' => 'manage_backup', 'label' => 'Backup & Restore', 'description' => 'Download full system backups and restore from a backup.', 'category' => 'System Administration', 'sort_order' => 82],
     ['key' => 'manage_settings', 'label' => 'Manage System Settings', 'description' => 'Configure deletion reasons, report branding, and SLA settings.', 'category' => 'System Administration', 'sort_order' => 83],
@@ -60,7 +63,7 @@ const USER_ROLE_DEFAULT_PERMISSIONS = [
     'exhibit_view', 'exhibit_create', 'exhibit_edit',
     'examination_view', 'examination_edit',
     'document_manage',
-    'asset_view', 'asset_manage',
+    'asset_view', 'asset_manage', 'asset_checkout',
     'manage_lookups',
 ];
 
@@ -225,6 +228,29 @@ function sync_roles_catalog(mysqli $conn): void
         $stmt->execute();
     }
     $stmt->close();
+}
+
+// A role is "privileged" if holding it grants the ability to further
+// escalate privileges (assign roles/permissions, or manage other users'
+// accounts). Assigning or removing a privileged role, or resetting a
+// privileged account's password, requires manage_role_permissions - plain
+// manage_users is not enough. 'admin' is always privileged; custom roles
+// are privileged if an admin has given their default bundle manage_users
+// or manage_role_permissions itself.
+function role_is_privileged(mysqli $conn, string $roleKey): bool
+{
+    if ($roleKey === 'admin' || $roleKey === 'super') {
+        return true;
+    }
+
+    $stmt = $conn->prepare("SELECT 1 FROM role_default_permissions WHERE role = ? AND permission_key IN ('manage_role_permissions', 'manage_users') LIMIT 1");
+    $stmt->bind_param("s", $roleKey);
+    $stmt->execute();
+    $stmt->store_result();
+    $privileged = $stmt->num_rows > 0;
+    $stmt->close();
+
+    return $privileged;
 }
 
 // All assignable roles (built-in and custom), for populating role

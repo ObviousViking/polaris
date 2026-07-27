@@ -5,16 +5,34 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once('../db.php');
+require_once '../includes/permissions.php';
+
+$userId = (int) $_SESSION['user_id'];
+$canViewAssets = user_can($conn, $userId, 'asset_view');
+$canManageLookups = user_can($conn, $userId, 'manage_lookups');
+$canCheckout = user_can($conn, $userId, 'asset_checkout');
+$canMaintain = user_can($conn, $userId, 'asset_maintenance');
+
 require_once('../header.php');
 ?>
 <div class="lh-shell">
     <div class="lh-nav">
+        <?php if ($canViewAssets): ?>
         <a href="manage_assets.php?embedded=1" target="lh-content">Manage Assets</a>
+        <?php endif; ?>
+        <?php if ($canManageLookups): ?>
         <a href="manage_asset_types.php?embedded=1" target="lh-content">Asset Types</a>
         <a href="manage_asset_locations.php?embedded=1" target="lh-content">Asset Locations</a>
+        <?php endif; ?>
+        <?php if ($canMaintain): ?>
         <a href="maintenance.php?embedded=1" target="lh-content">Maintenance & Calibration</a>
+        <?php endif; ?>
+        <?php if ($canCheckout): ?>
         <a href="checkout.php?embedded=1" target="lh-content">Asset Checkout</a>
+        <?php endif; ?>
+        <?php if ($canViewAssets): ?>
         <a href="audit_log.php?embedded=1" target="lh-content">Audit Logs</a>
+        <?php endif; ?>
     </div>
     <iframe name="lh-content" class="lh-content" srcdoc="<!DOCTYPE html><html<?php echo $userTheme === 'light' ? " data-theme='light'" : ''; ?>><head><meta charset='UTF-8'><link rel='stylesheet' href='/assets/theme.css'><style>body{margin:0;padding:20px;font-family:Arial,sans-serif;background:var(--polaris-bg);color:var(--polaris-text-muted);}h2{color:var(--polaris-text);margin:0 0 10px;}</style></head><body><h2>Asset Management</h2><p>Choose an option on the left.</p></body></html>"></iframe>
 </div>

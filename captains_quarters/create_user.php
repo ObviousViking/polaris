@@ -21,7 +21,14 @@ if ($embedded) {
 $message = "";
 $message_type = ""; // Will be "success" or "error"
 
+// A manage_users-only actor may create ordinary accounts, but not ones
+// holding a privileged role - otherwise they could mint themselves a fresh
+// admin account with the known default password.
+$canEditPrivileges = user_can($conn, (int) $_SESSION['user_id'], 'manage_role_permissions');
 $roles = get_all_roles($conn);
+if (!$canEditPrivileges) {
+    $roles = array_values(array_filter($roles, fn($r) => !role_is_privileged($conn, $r['role_key'])));
+}
 $assignableRoleKeys = array_column($roles, 'role_key');
 
 if ($_SERVER['REQUEST_METHOD'] === "POST") {

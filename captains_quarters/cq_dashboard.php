@@ -10,14 +10,14 @@ require_once '../includes/permissions.php';
 
 $userId = (int) $_SESSION['user_id'];
 
-// Everyone can reach this shell (Settings needs to be open to normal users
-// for its Storage Settings card) - each nav item below is shown only if
-// the user actually has the matching permission, and each linked page
-// still enforces its own check if reached directly regardless of the nav.
+// Everyone can reach this shell - each nav item below is shown only if the
+// user actually has the matching permission, and each linked page still
+// enforces its own check if reached directly regardless of the nav.
 $canManageUsers = user_can($conn, $userId, 'manage_users');
 $canManageRolePermissions = user_can($conn, $userId, 'manage_role_permissions');
 $canViewTasking = user_can($conn, $userId, 'task_view');
 $canManageBackup = user_can($conn, $userId, 'manage_backup');
+$canManageSettings = user_can($conn, $userId, 'manage_settings');
 $canViewLogsIntegrity = user_can($conn, $userId, 'view_logs_integrity');
 $canManageProcesses = user_can($conn, $userId, 'manage_processes');
 $canViewReports = user_can($conn, $userId, 'view_reports');
@@ -40,7 +40,9 @@ include '../header.php';
         <?php if ($canManageBackup): ?>
         <a href="backup_restore.php?embedded=1" target="cq-content">Backup / Restore</a>
         <?php endif; ?>
+        <?php if ($canManageSettings): ?>
         <a href="manage_settings.php?embedded=1" target="cq-content">Settings</a>
+        <?php endif; ?>
         <?php if ($canViewLogsIntegrity): ?>
         <a href="logs_and_integrity.php?embedded=1" target="cq-content">Logs &amp; Integrity</a>
         <?php endif; ?>

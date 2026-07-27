@@ -7,6 +7,8 @@ if (!isset($_SESSION['user_id'])) {
 require_once('../db.php');
 require_once '../includes/permissions.php';
 require_permission($conn, 'asset_view');
+$canManage = user_can($conn, (int) $_SESSION['user_id'], 'asset_manage');
+$canDelete = user_can($conn, (int) $_SESSION['user_id'], 'asset_delete');
 $embedded = isset($_GET['embedded']);
 if ($embedded) {
     require_once '../includes/embedded_header.php';
@@ -15,50 +17,55 @@ if ($embedded) {
 }
 
 // Build query based on filters
-$where = [];
+$where = ["a.deleted_at IS NULL"];
 $params = [];
 $types = '';
 
 if (!empty($_GET['keyword'])) {
-    $kw = '%' . $conn->real_escape_string($_GET['keyword']) . '%';
-    $where[] = "(asset_number LIKE ? OR friendly_name LIKE ? OR asset_type LIKE ? OR serial_number LIKE ? OR location LIKE ?)";
+    $kw = '%' . $_GET['keyword'] . '%';
+    $where[] = "(a.asset_number LIKE ? OR a.friendly_name LIKE ? OR t.type_name LIKE ? OR a.serial_number LIKE ? OR l.location_name LIKE ?)";
     $types .= 'sssss';
     $params[] = $kw; $params[] = $kw; $params[] = $kw; $params[] = $kw; $params[] = $kw;
 }
 if (!empty($_GET['asset_number'])) {
-    $where[] = "asset_number LIKE ?";
+    $where[] = "a.asset_number LIKE ?";
     $types .= 's';
     $params[] = '%' . $_GET['asset_number'] . '%';
 }
 if (!empty($_GET['serial_number'])) {
-    $where[] = "serial_number LIKE ?";
+    $where[] = "a.serial_number LIKE ?";
     $types .= 's';
     $params[] = '%' . $_GET['serial_number'] . '%';
 }
-if (!empty($_GET['asset_type'])) {
-    $where[] = "asset_type = ?";
-    $types .= 's';
-    $params[] = $_GET['asset_type'];
+if (!empty($_GET['asset_type_id'])) {
+    $where[] = "a.asset_type_id = ?";
+    $types .= 'i';
+    $params[] = intval($_GET['asset_type_id']);
 }
 if (isset($_GET['availability']) && $_GET['availability'] !== '') {
-    $where[] = "availability = ?";
+    $where[] = "a.availability = ?";
     $types .= 's';
     $params[] = $_GET['availability'];
 }
-if (!empty($_GET['location'])) {
-    $where[] = "location = ?";
-    $types .= 's';
-    $params[] = $_GET['location'];
+if (!empty($_GET['location_id'])) {
+    $where[] = "a.location_id = ?";
+    $types .= 'i';
+    $params[] = intval($_GET['location_id']);
 }
 
-$sql = "SELECT asset_number, friendly_name, asset_type, availability, serial_number, location
-        FROM assets";
+$sql = "
+    SELECT a.id, a.asset_number, a.friendly_name, t.type_name, a.availability, a.serial_number, l.location_name,
+           co.checkout_id, CONCAT(u.first_name, ' ', u.last_name) AS checked_out_to_name,
+           (SELECT m.next_due_at FROM asset_maintenance m WHERE m.asset_id = a.id ORDER BY m.performed_at DESC, m.maintenance_id DESC LIMIT 1) AS next_maintenance_due
+    FROM assets a
+    JOIN asset_types t ON t.id = a.asset_type_id
+    LEFT JOIN asset_locations l ON l.id = a.location_id
+    LEFT JOIN asset_checkouts co ON co.asset_id = a.id AND co.checked_in_at IS NULL
+    LEFT JOIN users u ON u.id = co.checked_out_to
+";
 
-if (!empty($where)) {
-    $sql .= " WHERE " . implode(" AND ", $where);
-}
-
-$sql .= " ORDER BY asset_number ASC";
+$sql .= " WHERE " . implode(" AND ", $where);
+$sql .= " ORDER BY a.asset_number ASC";
 
 $stmt = $conn->prepare($sql);
 if ($types && $stmt) {
@@ -72,19 +79,18 @@ while ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
-// Fetch distinct asset types from assets table
+// Active types/locations for the filter dropdowns.
 $assetTypes = [];
-$res = $conn->query("SELECT DISTINCT asset_type FROM assets WHERE asset_type IS NOT NULL AND asset_type != '' ORDER BY asset_type ASC");
+$res = $conn->query("SELECT id, type_name FROM asset_types WHERE is_active = 1 ORDER BY type_name ASC");
 while ($row = $res->fetch_assoc()) {
-    $assetTypes[] = $row['asset_type'];
+    $assetTypes[] = $row;
 }
 $res->free();
 
-// Fetch distinct locations from assets table
 $locations = [];
-$res = $conn->query("SELECT DISTINCT location FROM assets WHERE location IS NOT NULL AND location != '' ORDER BY location ASC");
+$res = $conn->query("SELECT id, location_name FROM asset_locations WHERE is_active = 1 ORDER BY location_name ASC");
 while ($row = $res->fetch_assoc()) {
-    $locations[] = $row['location'];
+    $locations[] = $row;
 }
 $res->free();
 
@@ -149,21 +155,35 @@ $res->free();
         color: var(--polaris-text);
     }
 
-    .asset-table {
+    .table-scroll {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    table {
         width: 100%;
         border-collapse: collapse;
         margin-top: 20px;
+        background: var(--polaris-surface);
     }
 
-    .asset-table th,
-    .asset-table td {
-        border: 1px solid var(--polaris-border);
-        padding: 8px;
+    th,
+    td {
+        border-bottom: 1px solid var(--polaris-border);
+        padding: 8px 10px;
         text-align: left;
+        font-size: 13px;
+        vertical-align: top;
     }
 
-    .asset-table th {
+    th {
         background: var(--polaris-divider);
+        white-space: nowrap;
+    }
+
+    .overdue {
+        color: var(--polaris-danger);
+        font-weight: bold;
     }
 
     .add-btn {
@@ -190,6 +210,21 @@ $res->free();
     .btn-add:hover {
         background: var(--polaris-success-strong-hover);
     }
+
+    .action-link {
+        font-size: 12px;
+        margin-right: 8px;
+    }
+
+    .delete-btn {
+        background: none;
+        border: none;
+        color: var(--polaris-danger);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 0;
+        text-decoration: underline;
+    }
     </style>
 
     <div class="container">
@@ -208,11 +243,11 @@ $res->free();
                 <label for="serial_number">Serial Number</label>
                 <input type="text" id="serial_number" name="serial_number">
 
-                <label for="asset_type">Asset Type</label>
-                <select id="asset_type" name="asset_type">
+                <label for="asset_type_id">Asset Type</label>
+                <select id="asset_type_id" name="asset_type_id">
                     <option value="">Any</option>
                     <?php foreach ($assetTypes as $type): ?>
-                    <option value="<?php echo htmlspecialchars($type); ?>"><?php echo htmlspecialchars($type); ?>
+                    <option value="<?php echo $type['id']; ?>"><?php echo htmlspecialchars($type['type_name']); ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -227,11 +262,11 @@ $res->free();
                     <option value="Destroyed">Destroyed</option>
                 </select>
 
-                <label for="location">Location</label>
-                <select id="location" name="location">
+                <label for="location_id">Location</label>
+                <select id="location_id" name="location_id">
                     <option value="">Any</option>
                     <?php foreach ($locations as $loc): ?>
-                    <option value="<?php echo htmlspecialchars($loc); ?>"><?php echo htmlspecialchars($loc); ?></option>
+                    <option value="<?php echo $loc['id']; ?>"><?php echo htmlspecialchars($loc['location_name']); ?></option>
                     <?php endforeach; ?>
                 </select>
 
@@ -243,50 +278,70 @@ $res->free();
 
 
             </form>
+            <?php if ($canManage): ?>
             <a href="add_asset.php" class="add-btn btn-add" target="_top">+ Add New Asset</a>
+            <?php endif; ?>
         </div>
 
 
         <div class="main">
             <h2>Asset Results</h2>
-            <table class="asset-table">
-                <thead>
-                    <tr>
-                        <th>Asset Number</th>
-                        <th>Friendly Name</th>
-                        <th>Asset Type</th>
-                        <th>Availability</th>
-                        <th>Serial Number</th>
-                        <th>Location</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (count($assets) === 0): ?>
-                    <tr>
-                        <td colspan="6">No assets found.</td>
-                    </tr>
-                    <?php else: ?>
-                    <?php foreach ($assets as $asset): ?>
-                    <tr>
-                        <td>
-                            <a href="edit_asset.php?asset_number=<?php echo urlencode($asset['asset_number']); ?>"
-                                style="color: var(--polaris-accent);" target="_top">
-                                <?php echo htmlspecialchars($asset['asset_number']); ?>
-                            </a>
-                        </td>
-                        <td><?php echo htmlspecialchars($asset['friendly_name'] ?? ''); ?></td>
-                        <td><?php echo htmlspecialchars($asset['asset_type'] ?? ''); ?></td>
-                        <td><?php echo htmlspecialchars($asset['availability'] ?? ''); ?></td>
-                        <td><?php echo htmlspecialchars($asset['serial_number'] ?? ''); ?></td>
-                        <td><?php echo htmlspecialchars($asset['location'] ?? ''); ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Asset Number</th>
+                            <th>Friendly Name</th>
+                            <th>Asset Type</th>
+                            <th>Availability</th>
+                            <th>Checked Out To</th>
+                            <th>Serial Number</th>
+                            <th>Location</th>
+                            <th>Next Maintenance Due</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (count($assets) === 0): ?>
+                        <tr>
+                            <td colspan="9">No assets found.</td>
+                        </tr>
+                        <?php else: ?>
+                        <?php foreach ($assets as $asset):
+                            $isOverdue = $asset['next_maintenance_due'] !== null && strtotime($asset['next_maintenance_due']) < time();
+                        ?>
+                        <tr>
+                            <td>
+                                <a href="edit_asset.php?asset_number=<?php echo urlencode($asset['asset_number']); ?>"
+                                    style="color: var(--polaris-accent);" target="_top">
+                                    <?php echo htmlspecialchars($asset['asset_number']); ?>
+                                </a>
+                            </td>
+                            <td><?php echo htmlspecialchars($asset['friendly_name'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($asset['type_name'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($asset['availability'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($asset['checked_out_to_name'] ?? '-'); ?></td>
+                            <td><?php echo htmlspecialchars($asset['serial_number'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($asset['location_name'] ?? '-'); ?></td>
+                            <td class="<?php echo $isOverdue ? 'overdue' : ''; ?>">
+                                <?php echo $asset['next_maintenance_due'] ? date('d/m/Y', strtotime($asset['next_maintenance_due'])) . ($isOverdue ? ' (overdue)' : '') : '-'; ?>
+                            </td>
+                            <td>
+                                <a class="action-link" href="audit_log.php?asset_id=<?php echo (int) $asset['id']; ?>" target="_top">History</a>
+                                <?php if ($canDelete && !$asset['checkout_id']): ?>
+                                <form method="post" action="delete_asset.php" style="display:inline;" target="_top">
+                                    <input type="hidden" name="asset_id" value="<?php echo (int) $asset['id']; ?>">
+                                    <button type="submit" class="delete-btn"
+                                        onclick="return confirmDeleteWithReason(this.form, 'Delete asset <?php echo htmlspecialchars(addslashes($asset['asset_number'])); ?>?')">Delete</button>
+                                </form>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     </div>
-</body>
-
-</html>

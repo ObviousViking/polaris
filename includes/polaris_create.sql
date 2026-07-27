@@ -27,6 +27,10 @@ DROP TABLE IF EXISTS `asset_locations`;
 CREATE TABLE `asset_locations` (
   `id` int NOT NULL AUTO_INCREMENT,
   `location_name` varchar(255) NOT NULL,
+  -- A location with any historical asset reference can't be hard-deleted
+  -- (assets.location_id has a FK back here) - see
+  -- manage_asset_locations.php, which deactivates instead in that case.
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -41,6 +45,7 @@ DROP TABLE IF EXISTS `asset_types`;
 CREATE TABLE `asset_types` (
   `id` int NOT NULL AUTO_INCREMENT,
   `type_name` varchar(255) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -56,14 +61,139 @@ CREATE TABLE `assets` (
   `id` int NOT NULL AUTO_INCREMENT,
   `asset_number` varchar(20) NOT NULL,
   `friendly_name` varchar(255) NOT NULL,
-  `asset_type` varchar(100) NOT NULL,
+  `asset_type_id` int NOT NULL,
   `serial_number` varchar(100) DEFAULT NULL,
-  `location` varchar(255) DEFAULT NULL,
+  `location_id` int DEFAULT NULL,
   `availability` enum('Deployed','Not Deployed','In Maintenance','Out Of Service','Destroyed') DEFAULT 'Deployed',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `created_by` int DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  -- Soft-delete only - see delete_asset.php. An asset can't be hard-deleted
+  -- once it has history, since asset_history is append-only and
+  -- foreign-keyed back to this table. NULL deleted_at = active.
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `asset_number` (`asset_number`)
+  UNIQUE KEY `asset_number` (`asset_number`),
+  KEY `asset_type_id` (`asset_type_id`),
+  KEY `location_id` (`location_id`),
+  KEY `created_by` (`created_by`),
+  KEY `deleted_by` (`deleted_by`),
+  CONSTRAINT `fk_assets_type` FOREIGN KEY (`asset_type_id`) REFERENCES `asset_types` (`id`),
+  CONSTRAINT `fk_assets_location` FOREIGN KEY (`location_id`) REFERENCES `asset_locations` (`id`),
+  CONSTRAINT `fk_assets_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_assets_deleted_by` FOREIGN KEY (`deleted_by`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=61 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `asset_history`
+--
+
+DROP TABLE IF EXISTS `asset_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_history` (
+  `history_id` int NOT NULL AUTO_INCREMENT,
+  `asset_id` int NOT NULL,
+  `action` enum('CREATE','UPDATE','CHECKOUT','CHECKIN','MAINTENANCE','DELETE','RESTORE') NOT NULL,
+  `changed_by` int NOT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `changes` text,
+  `prev_hash` char(64) NOT NULL,
+  `row_hash` char(64) NOT NULL,
+  `prev_hmac` char(64) NOT NULL,
+  `hmac_hash` char(64) NOT NULL,
+  PRIMARY KEY (`history_id`),
+  KEY `asset_id` (`asset_id`),
+  KEY `changed_by` (`changed_by`),
+  CONSTRAINT `fk_asset_history_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`),
+  CONSTRAINT `fk_asset_history_user` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TRIGGER IF EXISTS `asset_history_hash_chain`;
+CREATE TRIGGER `asset_history_hash_chain` BEFORE INSERT ON `asset_history`
+FOR EACH ROW
+BEGIN
+    DECLARE prev CHAR(64);
+    SELECT row_hash INTO prev FROM asset_history ORDER BY history_id DESC LIMIT 1;
+    IF prev IS NULL THEN
+        SET prev = REPEAT('0', 64);
+    END IF;
+    SET NEW.prev_hash = prev;
+    SET NEW.row_hash = SHA2(CONCAT_WS('|', NEW.asset_id, NEW.action, NEW.changed_by, NEW.changed_at, IFNULL(NEW.changes, ''), prev), 256);
+END;
+
+DROP TRIGGER IF EXISTS `asset_history_no_update`;
+CREATE TRIGGER `asset_history_no_update` BEFORE UPDATE ON `asset_history`
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'asset_history is append-only and cannot be modified';
+END;
+
+DROP TRIGGER IF EXISTS `asset_history_no_delete`;
+CREATE TRIGGER `asset_history_no_delete` BEFORE DELETE ON `asset_history`
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'asset_history is append-only and cannot be deleted from';
+END;
+
+--
+-- Table structure for table `asset_checkouts`
+--
+
+DROP TABLE IF EXISTS `asset_checkouts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_checkouts` (
+  `checkout_id` int NOT NULL AUTO_INCREMENT,
+  `asset_id` int NOT NULL,
+  `checked_out_to` int NOT NULL,
+  `checked_out_by` int NOT NULL,
+  `checked_out_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `due_back_at` datetime DEFAULT NULL,
+  `condition_out` text,
+  -- NULL checked_in_at = still out; at most one open row per asset.
+  `checked_in_at` datetime DEFAULT NULL,
+  `checked_in_by` int DEFAULT NULL,
+  `condition_in` text,
+  `notes` text,
+  PRIMARY KEY (`checkout_id`),
+  KEY `asset_id` (`asset_id`),
+  KEY `checked_out_to` (`checked_out_to`),
+  CONSTRAINT `fk_asset_checkouts_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`),
+  CONSTRAINT `fk_asset_checkouts_to` FOREIGN KEY (`checked_out_to`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_asset_checkouts_by` FOREIGN KEY (`checked_out_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `fk_asset_checkouts_in_by` FOREIGN KEY (`checked_in_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `asset_maintenance`
+--
+
+DROP TABLE IF EXISTS `asset_maintenance`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_maintenance` (
+  `maintenance_id` int NOT NULL AUTO_INCREMENT,
+  `asset_id` int NOT NULL,
+  `event_type` enum('Maintenance','Calibration','Verification','Repair','Inspection') NOT NULL,
+  `performed_at` date NOT NULL,
+  `performed_by` varchar(255) DEFAULT NULL,
+  `result` enum('Pass','Fail','N/A') DEFAULT NULL,
+  `next_due_at` date DEFAULT NULL,
+  `certificate_reference` varchar(255) DEFAULT NULL,
+  `notes` text,
+  `logged_by` int NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`maintenance_id`),
+  KEY `asset_id` (`asset_id`),
+  KEY `logged_by` (`logged_by`),
+  CONSTRAINT `fk_asset_maintenance_asset` FOREIGN KEY (`asset_id`) REFERENCES `assets` (`id`),
+  CONSTRAINT `fk_asset_maintenance_logged_by` FOREIGN KEY (`logged_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

@@ -2,10 +2,7 @@
 // manage_settings.php
 //
 // Combines Deletion Reasons, Report Branding, SLA, and Storage Settings
-// onto one tab. Storage Settings needs to stay open to normal users (see
-// cq_dashboard.php), so this page has no hard gate - the other three cards
-// are conditionally rendered (and their POST handlers re-checked) against
-// the manage_settings permission instead.
+// onto one tab, all gated behind the manage_settings permission.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -15,14 +12,13 @@ require_once '../db.php';
 require_once '../includes/settings.php';
 require_once '../includes/audit.php';
 require_once '../includes/permissions.php';
-
-$isAdmin = user_can($conn, (int) $_SESSION['user_id'], 'manage_settings');
+require_permission($conn, 'manage_settings');
 
 $deletionMessage = "";
 $slaMessage = "";
 $storageMessage = "";
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deletion_reason_settings_form']) && $isAdmin) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deletion_reason_settings_form'])) {
     $required = ($_POST['require_deletion_reason_toggle'] ?? '0') === '1';
     if (save_require_deletion_reason($conn, $required)) {
         log_audit_event($conn, 'setting', null, 'UPDATE', (int) $_SESSION['user_id'], json_encode(['setting_key' => 'require_deletion_reason', 'setting_value' => $required ? '1' : '0']));
@@ -30,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deletion_reason_setti
     } else {
         $deletionMessage = "Error updating setting.";
     }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sla_settings_form']) && $isAdmin) {
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sla_settings_form'])) {
     $days = intval($_POST['sla_days'] ?? 0);
     if ($days < 1) {
         $slaMessage = "SLA must be at least 1 day.";
@@ -215,7 +211,6 @@ $data_root = get_data_root($conn);
 <div class="container">
     <h2>Settings</h2>
 
-    <?php if ($isAdmin): ?>
     <div class="card">
         <h3>Deletion Reasons</h3>
         <p>When on, deleting anything in Polaris - exhibits, case updates, case types, statuses, exhibit locations,
@@ -277,7 +272,6 @@ $data_root = get_data_root($conn);
         <div class="message success"><?php echo htmlspecialchars($slaMessage); ?></div>
         <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <div class="card">
         <h3>Manage Storage Settings</h3>

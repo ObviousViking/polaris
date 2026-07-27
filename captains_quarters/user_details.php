@@ -25,6 +25,14 @@ $oldRoleStmt->close();
 
 $is_super_user = ($old_role === 'super');
 
+// Only manage_role_permissions holders may touch role/permissions, and
+// never on your own account - otherwise a manage_users-only role (which is
+// meant for basic account admin, not privilege control) could self-elevate
+// or hand another account admin rights outright.
+$canEditPrivileges = user_can($conn, (int) $_SESSION['user_id'], 'manage_role_permissions');
+$isSelf = ($user_id === (int) $_SESSION['user_id']);
+$canEditRoleAndPermissions = $canEditPrivileges && !$isSelf;
+
 $roles = get_all_roles($conn);
 $assignableRoleKeys = array_column($roles, 'role_key');
 
@@ -43,6 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // The super user's role can never be changed away from 'super'.
     if ($is_super_user) {
         $role = 'super';
+    } elseif (!$canEditRoleAndPermissions) {
+        // Actor can't touch role/permissions here (self-edit, or lacks
+        // manage_role_permissions) - keep the role exactly as it was.
+        $role = $old_role;
     }
 
     // Basic validation
@@ -63,7 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_event($conn, 'user', $user_id, 'UPDATE', (int) $_SESSION['user_id'], json_encode(['first_name' => $first_name, 'last_name' => $last_name, 'email' => $email, 'role' => $role, 'active' => $active]));
 
             // Super's access is hardcoded and not stored as explicit rows.
-            if (!$is_super_user) {
+            // Role/permission changes require manage_role_permissions and
+            // are never applied to your own account (see $canEditRoleAndPermissions).
+            if (!$is_super_user && $canEditRoleAndPermissions) {
                 // Assigning a (changed) role lands a fresh one-time snapshot
                 // of that role's current default bundle.
                 if ($role !== $old_role) {
@@ -165,7 +179,7 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
         </div>
         <div>
             <label>Role:</label>
-            <select name="role" <?php echo $is_super_user ? 'disabled' : ''; ?>>
+            <select name="role" <?php echo ($is_super_user || !$canEditRoleAndPermissions) ? 'disabled' : ''; ?>>
                 <?php if ($is_super_user): ?>
                 <option value="super" selected>Super</option>
                 <?php else: ?>
@@ -177,6 +191,11 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
             </select>
             <?php if ($is_super_user): ?>
             <input type="hidden" name="role" value="super"> <!-- Ensure role is sent as 'super' -->
+            <?php elseif (!$canEditRoleAndPermissions): ?>
+            <input type="hidden" name="role" value="<?php echo htmlspecialchars($user['role']); ?>">
+            <p class="permissions-note">
+                <?php echo $isSelf ? "You can't change your own role." : "Changing this user's role requires the Manage Role Permissions permission."; ?>
+            </p>
             <?php endif; ?>
         </div>
         <div>
@@ -191,6 +210,10 @@ if ($stmt = $conn->prepare("SELECT theme FROM users WHERE id = ? LIMIT 1")) {
             <label>Permissions:</label>
             <?php if ($is_super_user): ?>
             <p class="permissions-note">Super users have unrestricted access to everything. This cannot be edited.</p>
+            <?php elseif (!$canEditRoleAndPermissions): ?>
+            <p class="permissions-note">
+                <?php echo $isSelf ? "You can't edit your own permissions." : "Editing this user's permissions requires the Manage Role Permissions permission."; ?>
+            </p>
             <?php else: ?>
             <p class="permissions-note">Changing the role above and saving will reset these to that role's default
                 bundle before applying any changes made here.</p>

@@ -5,34 +5,26 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 require_once('../db.php');
-require_once('../includes/audit.php');
+require_once('../includes/integrity.php');
 require_once '../includes/permissions.php';
 require_permission($conn, 'asset_manage');
 require_once('../header.php');
 
-// No PHP header() redirect on success (uses a JS setTimeout redirect instead).
-
-// Fetch asset types
+// Active types/locations only - a deactivated one shouldn't be assignable
+// to a new asset, same as exhibit_locations on add_exhibit.php.
 $assetTypes = [];
-$res = $conn->query("SELECT id, type_name FROM asset_types ORDER BY type_name ASC");
+$res = $conn->query("SELECT id, type_name FROM asset_types WHERE is_active = 1 ORDER BY type_name ASC");
 while ($row = $res->fetch_assoc()) {
     $assetTypes[] = $row;
 }
 $res->free();
 
-// Fetch locations
 $locations = [];
-$res = $conn->query("SELECT id, location_name FROM asset_locations ORDER BY location_name ASC");
+$res = $conn->query("SELECT id, location_name FROM asset_locations WHERE is_active = 1 ORDER BY location_name ASC");
 while ($row = $res->fetch_assoc()) {
     $locations[] = $row;
 }
 $res->free();
-
-// Always generate the next asset number on page load
-$res = $conn->query("SELECT MAX(id) AS max_id FROM assets");
-$row = $res->fetch_assoc();
-$nextId = $row ? ($row['max_id'] + 1) : 1;
-$generatedAssetNumber = 'AS-' . str_pad($nextId, 5, '0', STR_PAD_LEFT);
 
 $message = "";
 
@@ -40,53 +32,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $friendly_name = trim($_POST['friendly_name']);
     $asset_type_id = intval($_POST['asset_type_id']);
     $serial_number = trim($_POST['serial_number']);
-    $location_id = intval($_POST['location_id']);
+    $location_id = !empty($_POST['location_id']) ? intval($_POST['location_id']) : null;
     $availability = trim($_POST['availability']);
+    $created_by = (int) $_SESSION['user_id'];
 
-    // Fetch asset_type text
-    $typeQuery = $conn->prepare("SELECT type_name FROM asset_types WHERE id = ?");
-    $typeQuery->bind_param("i", $asset_type_id);
-    $typeQuery->execute();
-    $typeQuery->bind_result($asset_type);
-    $typeQuery->fetch();
-    $typeQuery->close();
-
-    // Fetch location text
-    $locQuery = $conn->prepare("SELECT location_name FROM asset_locations WHERE id = ?");
-    $locQuery->bind_param("i", $location_id);
-    $locQuery->execute();
-    $locQuery->bind_result($location);
-    $locQuery->fetch();
-    $locQuery->close();
-
-    // Insert asset (using already generated number)
-    $stmt = $conn->prepare("INSERT INTO assets (asset_number, friendly_name, asset_type, serial_number, location, availability) VALUES (?, ?, ?, ?, ?, ?)");
-    if ($stmt) {
-        $stmt->bind_param("ssssss", $generatedAssetNumber, $friendly_name, $asset_type, $serial_number, $location, $availability);
-        if ($stmt->execute()) {
-    $newAssetId = $conn->insert_id;
-    log_audit_event($conn, 'asset', $newAssetId, 'CREATE', (int) $_SESSION['user_id'], json_encode(['asset_number' => $generatedAssetNumber, 'friendly_name' => $friendly_name, 'asset_type' => $asset_type]));
-    $message = "Asset added successfully with Asset Number: " . htmlspecialchars($generatedAssetNumber);
-
-    // REDIRECT after 3 seconds
-    echo "<script>
-        setTimeout(function() {
-            window.location.href = 'lh_dashboard.php';
-        }, 2000);
-    </script>";
-} else {
-    $message = "Error adding asset: " . $stmt->error;
-} 
-        $stmt->close();
+    if ($friendly_name === '' || $asset_type_id === 0) {
+        $message = "Please fill in all required fields.";
     } else {
-        $message = "Prepare failed: " . $conn->error;
+        // Asset number is generated at insert time and retried on a rare
+        // concurrent-submission collision, rather than trusting a number
+        // computed earlier at page-load time.
+        $generatedAssetNumber = null;
+        $newAssetId = null;
+        for ($attempt = 0; $attempt < 5 && $newAssetId === null; $attempt++) {
+            $res = $conn->query("SELECT MAX(id) AS max_id FROM assets");
+            $row = $res->fetch_assoc();
+            $nextId = ($row['max_id'] ?? 0) + 1 + $attempt;
+            $generatedAssetNumber = 'AS-' . str_pad((string) $nextId, 5, '0', STR_PAD_LEFT);
+
+            $stmt = $conn->prepare("INSERT INTO assets (asset_number, friendly_name, asset_type_id, serial_number, location_id, availability, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssisisi", $generatedAssetNumber, $friendly_name, $asset_type_id, $serial_number, $location_id, $availability, $created_by);
+            if ($stmt->execute()) {
+                $newAssetId = $conn->insert_id;
+            } elseif ($conn->errno !== 1062) {
+                // Not a duplicate-key error - no point retrying.
+                $message = "Error adding asset: " . $stmt->error;
+                $stmt->close();
+                break;
+            }
+            $stmt->close();
+        }
+
+        if ($newAssetId !== null) {
+            $typeName = "";
+            foreach ($assetTypes as $t) {
+                if ((int) $t['id'] === $asset_type_id) {
+                    $typeName = $t['type_name'];
+                    break;
+                }
+            }
+            $locationName = "";
+            foreach ($locations as $l) {
+                if ((int) $l['id'] === $location_id) {
+                    $locationName = $l['location_name'];
+                    break;
+                }
+            }
+
+            $changes = json_encode([
+                'asset_number' => $generatedAssetNumber,
+                'friendly_name' => $friendly_name,
+                'asset_type' => $typeName,
+                'serial_number' => $serial_number,
+                'location' => $locationName,
+                'availability' => $availability,
+            ]);
+            insert_history_row($conn, 'asset_history', $newAssetId, 'CREATE', $created_by, $changes);
+
+            $message = "Asset added successfully with Asset Number: " . htmlspecialchars($generatedAssetNumber);
+            echo "<script>
+                setTimeout(function() {
+                    window.location.href = 'lh_dashboard.php';
+                }, 2000);
+            </script>";
+        } elseif ($message === '') {
+            $message = "Error adding asset: could not generate a unique asset number.";
+        }
     }
 }
 ?>
-
-
-
-
 
 <style>
     /* header.php's own body{} already sets margin/background/color/font-family
@@ -178,10 +192,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="post">
-            <label for="asset_number">Asset Number</label>
-            <input type="text" id="asset_number" name="asset_number"
-                value="<?php echo htmlspecialchars($generatedAssetNumber); ?>" readonly disabled>
-
             <label for="friendly_name">Friendly Name*</label>
             <input type="text" name="friendly_name" id="friendly_name" required>
 
@@ -196,8 +206,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label for="serial_number">Serial Number</label>
             <input type="text" name="serial_number" id="serial_number">
 
-            <label for="location_id">Location*</label>
-            <select name="location_id" id="location_id" required>
+            <label for="location_id">Location</label>
+            <select name="location_id" id="location_id">
                 <option value="">Select Location</option>
                 <?php foreach ($locations as $loc): ?>
                 <option value="<?php echo $loc['id']; ?>"><?php echo htmlspecialchars($loc['location_name']); ?>
