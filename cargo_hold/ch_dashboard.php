@@ -14,7 +14,6 @@ include '../header.php';
         <a href="search_cases.php?embedded=1" target="ch-content">Search Cases</a>
         <a href="search_exhibits.php?embedded=1" target="ch-content">Search Exhibits</a>
         <a href="search_examinations.php?embedded=1" target="ch-content">Search Examinations</a>
-        <a href="manage_system_details.php?embedded=1" target="ch-content">Manage System Details</a>
         <a href="my_workload.php?embedded=1" target="ch-content">My Workload</a>
     </div>
     <iframe name="ch-content" class="ch-content" srcdoc="<!DOCTYPE html><html<?php echo $userTheme === 'light' ? " data-theme='light'" : ''; ?>><head><meta charset='UTF-8'><link rel='stylesheet' href='/assets/theme.css'><style>body{margin:0;padding:20px;font-family:Arial,sans-serif;background:var(--polaris-bg);color:var(--polaris-text-muted);}h2{color:var(--polaris-text);margin:0 0 10px;}</style></head><body><h2>Case Management</h2><p>Choose an option on the left.</p></body></html>"></iframe>

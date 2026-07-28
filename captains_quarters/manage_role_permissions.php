@@ -186,8 +186,8 @@ body {
 }
 
 .content-wrapper {
-    max-width: 1000px;
-    margin: <?php echo $embedded ? '0' : '80px'; ?> auto 0 auto;
+    max-width: 1400px;
+    margin: <?php echo $embedded ? '0' : '80px'; ?> 20px 0 20px;
     padding: 20px;
 }
 

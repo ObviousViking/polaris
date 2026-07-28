@@ -30,7 +30,7 @@ if (!$stmt->fetch()) {
 $stmt->close();
 
 if ($deletedAt === null) {
-    header("Location: manage_assets.php?embedded=1");
+    header("Location: manage_assets.php");
     exit();
 }
 
@@ -45,5 +45,5 @@ if ($ok) {
     insert_history_row($conn, 'asset_history', $asset_id, 'RESTORE', $changedBy, json_encode(['restored_from_deleted_at' => $deletedAt]));
 }
 
-header("Location: manage_assets.php?embedded=1");
+header("Location: manage_assets.php");
 exit();

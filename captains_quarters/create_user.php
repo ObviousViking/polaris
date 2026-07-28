@@ -86,21 +86,26 @@ if ($_SERVER['REQUEST_METHOD'] === "POST") {
     <p class="message <?php echo $message_type; ?>"><?php echo htmlspecialchars($message); ?></p>
     <?php endif; ?>
 
-    <form method="post" action="create_user.php">
-        <div>
-            <label for="first_name">First Name:</label>
-            <input type="text" name="first_name" id="first_name" required>
-        </div>
-        <div>
-            <label for="last_name">Last Name:</label>
-            <input type="text" name="last_name" id="last_name" required>
-        </div>
-        <div>
-            <label for="email">Email Address:</label>
+    <div class="form-card">
+        <p class="note">New accounts are created with the default password <strong>Password1!</strong> - the user
+            should change it after their first login.</p>
+
+        <form method="post" action="create_user.php<?php echo $embedded ? '?embedded=1' : ''; ?>">
+            <div class="field-row">
+                <div>
+                    <label for="first_name">First Name</label>
+                    <input type="text" name="first_name" id="first_name" required>
+                </div>
+                <div>
+                    <label for="last_name">Last Name</label>
+                    <input type="text" name="last_name" id="last_name" required>
+                </div>
+            </div>
+
+            <label for="email">Email Address</label>
             <input type="email" name="email" id="email" required>
-        </div>
-        <div>
-            <label for="role">User Role:</label>
+
+            <label for="role">User Role</label>
             <select name="role" id="role" required>
                 <option value="">Select Role</option>
                 <?php foreach ($roles as $r): ?>
@@ -108,28 +113,56 @@ if ($_SERVER['REQUEST_METHOD'] === "POST") {
                     <?php echo htmlspecialchars($r['label']); ?></option>
                 <?php endforeach; ?>
             </select>
-        </div>
-        <div>
-            <input type="submit" value="Create User">
-        </div>
-    </form>
+
+            <div class="btn-row">
+                <input type="submit" value="Create User">
+                <?php if (!$embedded): ?>
+                <a href="cq_dashboard.php" class="cancel-btn">Cancel</a>
+                <?php endif; ?>
+            </div>
+        </form>
+    </div>
 </div>
 
 <style>
 .content-wrapper {
-    max-width: 600px;
-    margin: <?php echo $embedded ? '0' : '80px'; ?> auto 0 auto;
+    max-width: 700px;
+    margin: <?php echo $embedded ? '0' : '80px'; ?> 20px 0 20px;
     padding: 20px;
 }
 
-form div {
-    margin-bottom: 15px;
+.form-card {
+    background: var(--polaris-surface);
+    border-radius: 8px;
+    padding: 20px 25px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.note {
+    background: var(--polaris-divider);
+    border-left: 4px solid var(--polaris-accent);
+    color: var(--polaris-text-secondary);
+    padding: 10px 12px;
+    border-radius: 3px;
+    font-size: 13px;
+    margin: 0 0 20px 0;
+}
+
+.field-row {
+    display: flex;
+    gap: 15px;
+}
+
+.field-row>div {
+    flex: 1;
 }
 
 label {
     display: block;
     margin-bottom: 5px;
     font-weight: bold;
+    color: var(--polaris-text-dim);
+    font-size: 14px;
 }
 
 input[type="text"],
@@ -137,14 +170,25 @@ input[type="email"],
 select {
     width: 100%;
     padding: 8px;
-    border: 1px solid var(--polaris-text-secondary);
+    margin-bottom: 15px;
+    border: 1px solid var(--polaris-border);
     border-radius: 4px;
+    background: var(--polaris-bg);
+    color: var(--polaris-text);
+    box-sizing: border-box;
+}
+
+.btn-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 5px;
 }
 
 input[type="submit"] {
     background: var(--polaris-success-strong);
     color: var(--polaris-text);
-    padding: 5px 10px;
+    padding: 6px 14px;
     border: none;
     border-radius: 3px;
     cursor: pointer;
@@ -153,6 +197,17 @@ input[type="submit"] {
 
 input[type="submit"]:hover {
     background: var(--polaris-success-strong-hover);
+}
+
+.cancel-btn {
+    color: var(--polaris-text-secondary);
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.cancel-btn:hover {
+    color: var(--polaris-text);
+    text-decoration: underline;
 }
 
 .message.success {

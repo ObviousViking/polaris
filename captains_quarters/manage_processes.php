@@ -22,7 +22,42 @@ if ($embedded) {
 $message = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['delete_process_type'])) {
+    if (isset($_POST['move_up']) || isset($_POST['move_down'])) {
+        // Swaps this process's sort_order with whichever neighbour is
+        // immediately above/below it, so reordering never needs to
+        // renumber the whole table.
+        $moveId = intval($_POST['move_up'] ?? $_POST['move_down']);
+        $movingUp = isset($_POST['move_up']);
+
+        $curStmt = $conn->prepare("SELECT sort_order FROM process_types WHERE id = ?");
+        $curStmt->bind_param("i", $moveId);
+        $curStmt->execute();
+        $curStmt->bind_result($curOrder);
+        if ($curStmt->fetch()) {
+            $curStmt->close();
+
+            $neighborSql = $movingUp
+                ? "SELECT id, sort_order FROM process_types WHERE sort_order < ? ORDER BY sort_order DESC LIMIT 1"
+                : "SELECT id, sort_order FROM process_types WHERE sort_order > ? ORDER BY sort_order ASC LIMIT 1";
+            $neighborStmt = $conn->prepare($neighborSql);
+            $neighborStmt->bind_param("i", $curOrder);
+            $neighborStmt->execute();
+            $neighborStmt->bind_result($neighborId, $neighborOrder);
+            if ($neighborStmt->fetch()) {
+                $neighborStmt->close();
+                $swapStmt = $conn->prepare("UPDATE process_types SET sort_order = ? WHERE id = ?");
+                $swapStmt->bind_param("ii", $neighborOrder, $moveId);
+                $swapStmt->execute();
+                $swapStmt->bind_param("ii", $curOrder, $neighborId);
+                $swapStmt->execute();
+                $swapStmt->close();
+            } else {
+                $neighborStmt->close();
+            }
+        } else {
+            $curStmt->close();
+        }
+    } elseif (isset($_POST['delete_process_type'])) {
         $delete_id = intval($_POST['delete_process_type']);
 
         $checkStmt = $conn->prepare("SELECT COUNT(*) FROM exhibit_processes WHERE process_type_id = ?");
@@ -84,8 +119,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $message = "Process updated.";
                 } else {
                     $userId = (int) $_SESSION['user_id'];
-                    $stmt = $conn->prepare("INSERT INTO process_types (name, description, created_by) VALUES (?, ?, ?)");
-                    $stmt->bind_param("ssi", $name, $description, $userId);
+                    $nextOrderResult = $conn->query("SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM process_types");
+                    $nextOrder = (int) $nextOrderResult->fetch_assoc()['next_order'];
+                    $stmt = $conn->prepare("INSERT INTO process_types (name, description, sort_order, created_by) VALUES (?, ?, ?, ?)");
+                    $stmt->bind_param("ssii", $name, $description, $nextOrder, $userId);
                     $stmt->execute();
                     $newId = $conn->insert_id;
                     $stmt->close();
@@ -99,16 +136,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $processTypes = [];
 $res = $conn->query("
-    SELECT pt.id, pt.name, pt.description,
+    SELECT pt.id, pt.name, pt.description, pt.sort_order,
            (SELECT COUNT(*) FROM process_fields pf WHERE pf.process_type_id = pt.id) AS field_count,
            (SELECT COUNT(*) FROM exhibit_processes ep WHERE ep.process_type_id = pt.id) AS usage_count
     FROM process_types pt
-    ORDER BY pt.name
+    ORDER BY pt.sort_order ASC
 ");
 while ($row = $res->fetch_assoc()) {
     $processTypes[] = $row;
 }
 $res->free();
+$processTypeCount = count($processTypes);
 ?>
 <style>
     body {
@@ -120,8 +158,8 @@ $res->free();
     }
 
     .container {
-        max-width: 900px;
-        margin: 20px auto;
+        max-width: 1400px;
+        margin: 20px 20px 0 20px;
         background: var(--polaris-surface);
         padding: 20px;
         border-radius: 8px;
@@ -130,9 +168,12 @@ $res->free();
     }
 
     h2 {
-        text-align: center;
         font-size: 24px;
         margin-bottom: 20px;
+    }
+
+    form {
+        max-width: 500px;
     }
 
     label {
@@ -160,8 +201,14 @@ $res->free();
         resize: vertical;
     }
 
+    .table-scroll {
+        width: 100%;
+        overflow-x: auto;
+    }
+
     table {
         width: 100%;
+        min-width: 900px;
         border-collapse: collapse;
         margin-top: 15px;
     }
@@ -186,6 +233,7 @@ $res->free();
         border-radius: 3px;
         text-decoration: none;
         display: inline-block;
+        margin: 2px 5px 2px 0;
         transition: background 0.3s ease;
     }
 
@@ -200,6 +248,34 @@ $res->free();
 
     .delete-btn:hover {
         background: var(--polaris-danger);
+    }
+
+    .order-cell {
+        white-space: nowrap;
+        display: flex;
+        gap: 6px;
+    }
+
+    .order-btn {
+        background: var(--polaris-divider);
+        color: var(--polaris-text);
+        border: 1px solid var(--polaris-border);
+        border-radius: 3px;
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+    }
+
+    .order-btn:hover:not(:disabled) {
+        background: var(--polaris-accent);
+    }
+
+    .order-btn:disabled {
+        opacity: 0.3;
+        cursor: default;
     }
 
     .message {
@@ -236,8 +312,14 @@ $res->free();
 
 <div class="container">
     <h2>Process Builder</h2>
-    <p class="muted" style="text-align:center;">Define the examination processes analysts can attach to an
-        exhibit (Captain's Log &rarr; Examine &rarr; Add Process), and which fields each one asks for.</p>
+    <p class="muted">Define the examination processes analysts can attach to an
+        exhibit (Captain's Log &rarr; Examine &rarr; Add Process), and which fields each one asks for.
+        <?php if (user_can($conn, (int) $_SESSION['user_id'], 'manage_metadata_pool')): ?>
+        For fields that describe the exhibit itself (make, model, serial, IMEI...) rather than one process, use the
+        <a href="manage_metadata_fields.php<?php echo $embedded ? '?embedded=1' : ''; ?>">Metadata Pool</a> instead of a
+        one-off text field, so the value is shared and tracked across every process that needs it.
+        <?php endif; ?>
+    </p>
 
     <?php if (!empty($message)): ?>
     <div class="message"><?php echo htmlspecialchars($message); ?></div>
@@ -252,9 +334,13 @@ $res->free();
         <button type="submit" class="action-btn">Save</button>
     </form>
 
+    <p class="muted">Processes appear in this order in the "Add Process" list on the examination page.</p>
+
+    <div class="table-scroll">
     <table>
         <thead>
             <tr>
+                <th>Order</th>
                 <th>Process</th>
                 <th>Description</th>
                 <th>Fields</th>
@@ -265,11 +351,21 @@ $res->free();
         <tbody>
             <?php if (empty($processTypes)): ?>
             <tr>
-                <td colspan="5" class="muted">No processes defined yet.</td>
+                <td colspan="6" class="muted">No processes defined yet.</td>
             </tr>
             <?php else: ?>
-            <?php foreach ($processTypes as $pt): ?>
+            <?php foreach ($processTypes as $index => $pt): ?>
             <tr>
+                <td class="order-cell">
+                    <form method="post" action="manage_processes.php<?php echo $embedded ? '?embedded=1' : ''; ?>" style="display:inline;">
+                        <input type="hidden" name="move_up" value="<?php echo $pt['id']; ?>">
+                        <button type="submit" class="order-btn" <?php echo $index === 0 ? 'disabled' : ''; ?> title="Move up">&uarr;</button>
+                    </form>
+                    <form method="post" action="manage_processes.php<?php echo $embedded ? '?embedded=1' : ''; ?>" style="display:inline;">
+                        <input type="hidden" name="move_down" value="<?php echo $pt['id']; ?>">
+                        <button type="submit" class="order-btn" <?php echo $index === $processTypeCount - 1 ? 'disabled' : ''; ?> title="Move down">&darr;</button>
+                    </form>
+                </td>
                 <td><?php echo htmlspecialchars($pt['name']); ?></td>
                 <td><?php echo htmlspecialchars($pt['description'] ?? ''); ?></td>
                 <td><?php echo (int) $pt['field_count']; ?></td>
@@ -291,6 +387,7 @@ $res->free();
             <?php endif; ?>
         </tbody>
     </table>
+    </div>
 
     <br>
     <?php if (!$embedded): ?>

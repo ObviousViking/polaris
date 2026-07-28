@@ -81,17 +81,12 @@ $data_root = get_data_root($conn);
     }
 
     .container {
-        max-width: 800px;
-        margin: 20px auto;
-        background: var(--polaris-surface);
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        max-width: 1400px;
+        margin: 20px 20px 0 20px;
         box-sizing: border-box;
     }
 
     h2 {
-        text-align: center;
         font-size: 24px;
         margin-bottom: 20px;
     }
@@ -100,11 +95,18 @@ $data_root = get_data_root($conn);
         margin-bottom: 5px;
     }
 
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+        gap: 20px;
+        align-items: start;
+    }
+
     .card {
         background: var(--polaris-surface-alt);
         border-radius: 6px;
         padding: 15px 20px;
-        margin-bottom: 20px;
+        margin-bottom: 0;
     }
 
     .card p {
@@ -211,6 +213,7 @@ $data_root = get_data_root($conn);
 <div class="container">
     <h2>Settings</h2>
 
+    <div class="cards-grid">
     <div class="card">
         <h3>Deletion Reasons</h3>
         <p>When on, deleting anything in Polaris - exhibits, case updates, case types, statuses, exhibit locations,
@@ -242,7 +245,7 @@ $data_root = get_data_root($conn);
             <img src="<?php echo htmlspecialchars($reportLogoUrl); ?>" alt="Current report logo"
                 style="max-height:70px; max-width:260px; background:#fff; padding:6px; border-radius:4px;">
         </div>
-        <form method="post" action="upload_report_logo.php" style="display:inline;">
+        <form method="post" action="upload_report_logo.php<?php echo $embedded ? '?embedded=1' : ''; ?>" style="display:inline;">
             <input type="hidden" name="remove_logo" value="1">
             <button type="submit" class="action-btn danger-btn"
                 onclick="return confirm('Remove the report logo?');">Remove Logo</button>
@@ -250,7 +253,7 @@ $data_root = get_data_root($conn);
         <?php else: ?>
         <p class="empty-note" style="color: var(--polaris-text-secondary); font-style:italic;">No logo uploaded yet.</p>
         <?php endif; ?>
-        <form method="post" action="upload_report_logo.php" enctype="multipart/form-data" style="margin-top:10px;">
+        <form method="post" action="upload_report_logo.php<?php echo $embedded ? '?embedded=1' : ''; ?>" enctype="multipart/form-data" style="margin-top:10px;">
             <label for="logo">Upload new logo</label>
             <input type="file" name="logo" id="logo" accept=".png,.jpg,.jpeg" required>
             <button type="submit" class="action-btn" style="margin-top:10px;">Upload</button>
@@ -287,6 +290,7 @@ $data_root = get_data_root($conn);
         <?php if ($storageMessage): ?>
         <div class="message success"><?php echo htmlspecialchars($storageMessage); ?></div>
         <?php endif; ?>
+    </div>
     </div>
 
     <?php if (!$embedded): ?>

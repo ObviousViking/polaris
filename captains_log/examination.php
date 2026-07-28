@@ -8,7 +8,6 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../db.php';
 require_once '../includes/permissions.php';
 require_permission($conn, 'examination_view');
-include '../header.php';
 
 // Validate exhibit_id
 $exhibit_id = isset($_GET['exhibit_id']) ? intval($_GET['exhibit_id']) : 0;
@@ -18,7 +17,7 @@ if ($exhibit_id <= 0) {
 
 // Get exhibit details
 $exhibit_stmt = $conn->prepare("
-    SELECT e.exhibit_ref, e.bag_number, e.status,
+    SELECT e.exhibit_ref, e.bag_number, e.status, e.parent_id,
            e.allocated_to, u.first_name, u.last_name,
            e.urgency, e.location_id, l.location_name,
            e.exhibit_type_id, t.type_name
@@ -36,6 +35,19 @@ $exhibit = $exhibit_result->fetch_assoc();
 if (!$exhibit) {
     die("Exhibit not found.");
 }
+
+// The examination page always shows the parent exhibit - a sub-exhibit's
+// own processes/photos/documents/sub-exhibits would otherwise look like
+// they'd disappeared behind a separate page whenever a link (e.g. after
+// saving a process recorded against a sub-exhibit) lands here with a
+// sub-exhibit's id. Processes recorded against a sub-exhibit still show up
+// in the parent's Processes table, flagged as such - see below.
+if ($exhibit['parent_id'] !== null) {
+    header("Location: examination.php?exhibit_id=" . (int) $exhibit['parent_id']);
+    exit();
+}
+
+include '../header.php';
 
 // Get sub exhibits
 $sub_stmt = $conn->prepare("
@@ -116,7 +128,7 @@ $job_id = $job_row ? $job_row['job_id'] : 0;
 
 // Active processes only for the "Add Process" picker.
 $processTypes = [];
-$ptResult = $conn->query("SELECT id, name FROM process_types WHERE is_active = 1 ORDER BY name");
+$ptResult = $conn->query("SELECT id, name FROM process_types WHERE is_active = 1 ORDER BY sort_order ASC");
 while ($row = $ptResult->fetch_assoc()) {
     $processTypes[] = $row;
 }
@@ -142,6 +154,27 @@ while ($epRow = $epResult->fetch_assoc()) {
     $exhibitProcesses[] = $epRow;
 }
 $epStmt->close();
+
+// Shared metadata pool values recorded for this exhibit (see
+// captains_quarters/manage_metadata_fields.php / manage_exhibit_process.php).
+// Only fields with a value are shown - most exhibits only fill in a few.
+$exhibitMetadata = [];
+$mdStmt = $conn->prepare("
+    SELECT mf.field_label, mf.field_type, mf.hash_algorithm, mv.value, mv.updated_at,
+           CONCAT(u.first_name, ' ', u.last_name) AS updated_by_name
+    FROM exhibit_metadata_values mv
+    JOIN exhibit_metadata_fields mf ON mf.id = mv.metadata_field_id
+    LEFT JOIN users u ON u.id = mv.updated_by
+    WHERE mv.exhibit_id = ? AND mv.value IS NOT NULL AND mv.value != ''
+    ORDER BY mf.sort_order
+");
+$mdStmt->bind_param("i", $exhibit_id);
+$mdStmt->execute();
+$mdResult = $mdStmt->get_result();
+while ($mdRow = $mdResult->fetch_assoc()) {
+    $exhibitMetadata[] = $mdRow;
+}
+$mdStmt->close();
 ?>
 
 <link rel="stylesheet" href="/assets/dropzone/dropzone.min.css">
@@ -287,6 +320,20 @@ $epStmt->close();
         font-size: 14px;
     }
 
+    .badge-sub {
+        display: inline-block;
+        padding: 2px 8px;
+        margin-left: 6px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+        background: var(--polaris-accent);
+        color: var(--polaris-text);
+    }
+
     .bottom-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -406,6 +453,40 @@ $epStmt->close();
         </div>
     </div>
 
+    <?php if (!empty($exhibitMetadata)): ?>
+    <!-- Exhibit Metadata - the shared pool, not tied to any one process -->
+    <div class="panel">
+        <div class="info-header">
+            <h2>Exhibit Metadata</h2>
+            <a href="view_metadata_history.php?exhibit_id=<?= $exhibit_id ?>" class="btn btn-small btn-outline">History</a>
+        </div>
+        <div class="sheet-table-wrapper">
+            <table class="sheet-table">
+                <thead>
+                    <tr>
+                        <?php foreach ($exhibitMetadata as $md): ?>
+                        <th><?= htmlspecialchars($md['field_label']) ?></th>
+                        <?php endforeach; ?>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <?php foreach ($exhibitMetadata as $md): ?>
+                        <td>
+                            <?php if ($md['field_type'] === 'checkbox'): ?>
+                            <?= $md['value'] === '1' ? 'Yes' : 'No' ?>
+                            <?php else: ?>
+                            <?= htmlspecialchars($md['value']) ?>
+                            <?php endif; ?>
+                        </td>
+                        <?php endforeach; ?>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Processes -->
     <div class="panel">
         <div class="info-header">
@@ -453,7 +534,7 @@ $epStmt->close();
                     <?php foreach ($exhibitProcesses as $ep): ?>
                     <tr>
                         <td><?= htmlspecialchars($ep['process_name']) ?></td>
-                        <td><?= htmlspecialchars($ep['exhibit_ref']) ?></td>
+                        <td><?= htmlspecialchars($ep['exhibit_ref']) ?><?php if ((int) $ep['exhibit_id'] !== $exhibit_id): ?><span class="badge-sub">Sub</span><?php endif; ?></td>
                         <td><?= htmlspecialchars($ep['entered_by_name'] ?? '') ?></td>
                         <td><?= htmlspecialchars($ep['updated_at']) ?></td>
                         <td><a href="manage_exhibit_process.php?exhibit_process_id=<?= $ep['id'] ?>"

@@ -16,16 +16,19 @@ require_once '../includes/backup.php';
 require_once '../includes/permissions.php';
 require_permission($conn, 'manage_backup');
 
+$backupRestoreUrl = 'backup_restore.php' . (isset($_GET['embedded']) ? '?embedded=1' : '');
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: backup_restore.php");
+    header("Location: $backupRestoreUrl");
     exit();
 }
 
 function fail(string $message): void
 {
+    global $backupRestoreUrl;
     $_SESSION['restore_message'] = $message;
     $_SESSION['restore_message_type'] = 'error';
-    header("Location: backup_restore.php");
+    header("Location: $backupRestoreUrl");
     exit();
 }
 

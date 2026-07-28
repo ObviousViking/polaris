@@ -73,19 +73,54 @@ if (!$exStmt->fetch()) {
 }
 $exStmt->close();
 
-// Field definitions for this process type, in display order.
+// Field definitions for this process type, in display order. A 'metapool'
+// field doesn't own a type/hash_algorithm of its own - it's re-pointed here
+// at whatever the linked exhibit_metadata_fields row currently says, so all
+// the rendering/validation below can treat it exactly like a normal field.
 $fields = [];
-$fieldStmt = $conn->prepare("SELECT id, field_label, field_key, field_type, lookup_source, is_required FROM process_fields WHERE process_type_id = ? ORDER BY sort_order");
+$fieldStmt = $conn->prepare("
+    SELECT pf.id, pf.field_label, pf.field_key, pf.field_type, pf.lookup_source, pf.lookup_asset_type_id,
+           pf.hash_algorithm, pf.metadata_field_id, pf.is_required,
+           mf.field_type AS metapool_field_type, mf.hash_algorithm AS metapool_hash_algorithm
+    FROM process_fields pf
+    LEFT JOIN exhibit_metadata_fields mf ON mf.id = pf.metadata_field_id
+    WHERE pf.process_type_id = ?
+    ORDER BY pf.sort_order
+");
 $fieldStmt->bind_param("i", $process_type_id);
 $fieldStmt->execute();
 $fieldResult = $fieldStmt->get_result();
+$metapoolFieldIds = [];
 while ($row = $fieldResult->fetch_assoc()) {
+    $row['is_metapool'] = $row['field_type'] === 'metapool' && $row['metadata_field_id'] !== null;
+    if ($row['is_metapool']) {
+        $row['field_type'] = $row['metapool_field_type'];
+        $row['hash_algorithm'] = $row['metapool_hash_algorithm'];
+        $metapoolFieldIds[] = (int) $row['metadata_field_id'];
+    }
     if ($row['field_type'] === 'lookup') {
-        $row['lookup_options'] = get_process_field_lookup_options($conn, $row['lookup_source']);
+        $assetTypeId = $row['lookup_asset_type_id'] !== null ? (int) $row['lookup_asset_type_id'] : null;
+        $row['lookup_options'] = get_process_field_lookup_options($conn, $row['lookup_source'], $assetTypeId);
     }
     $fields[] = $row;
 }
 $fieldStmt->close();
+
+// Current pool values for this exhibit, to pre-fill metapool fields that
+// this specific process instance hasn't recorded its own value for yet.
+$metapoolCurrent = [];
+if (!empty($metapoolFieldIds)) {
+    $placeholders = implode(',', array_fill(0, count($metapoolFieldIds), '?'));
+    $types = 'i' . str_repeat('i', count($metapoolFieldIds));
+    $mvStmt = $conn->prepare("SELECT metadata_field_id, value FROM exhibit_metadata_values WHERE exhibit_id = ? AND metadata_field_id IN ($placeholders)");
+    $mvStmt->bind_param($types, $exhibit_id, ...$metapoolFieldIds);
+    $mvStmt->execute();
+    $mvResult = $mvStmt->get_result();
+    while ($mrow = $mvResult->fetch_assoc()) {
+        $metapoolCurrent[(int) $mrow['metadata_field_id']] = $mrow['value'];
+    }
+    $mvStmt->close();
+}
 
 $message = "";
 
@@ -102,6 +137,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($f['field_type'] === 'number' && $raw !== '' && !is_numeric($raw)) {
             $missingRequired[] = $f['field_label'] . ' (must be a number)';
         }
+        if ($f['field_type'] === 'hash' && $raw !== '') {
+            $expectedLength = ['MD5' => 32, 'SHA1' => 40, 'SHA256' => 64][$f['hash_algorithm']] ?? null;
+            if ($expectedLength !== null && !preg_match('/^[a-fA-F0-9]{' . $expectedLength . '}$/', $raw)) {
+                $missingRequired[] = $f['field_label'] . ' (must be a ' . $expectedLength . '-character hex ' . $f['hash_algorithm'] . ' hash)';
+            }
+        }
         $fieldValues[(int) $f['id']] = $raw;
     }
 
@@ -109,6 +150,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = "Please check: " . implode(', ', $missingRequired);
     } else {
         $userId = (int) $_SESSION['user_id'];
+
+        // Write through to the shared metadata pool before touching this
+        // process instance's own records, so every process that includes
+        // this field (past and future) sees the same current value, with
+        // its own change tracked in exhibit_metadata_history regardless of
+        // which process triggered it.
+        foreach ($fields as $f) {
+            if (!$f['is_metapool']) {
+                continue;
+            }
+            $metadataFieldId = (int) $f['metadata_field_id'];
+            $newValue = $fieldValues[(int) $f['id']];
+
+            $curStmt = $conn->prepare("SELECT value FROM exhibit_metadata_values WHERE exhibit_id = ? AND metadata_field_id = ?");
+            $curStmt->bind_param("ii", $exhibit_id, $metadataFieldId);
+            $curStmt->execute();
+            $curStmt->bind_result($oldValue);
+            $hadRow = $curStmt->fetch();
+            $curStmt->close();
+            if (!$hadRow) {
+                $oldValue = null;
+            }
+
+            if ($newValue === ($oldValue ?? '')) {
+                continue;
+            }
+
+            $mvStmt = $conn->prepare("
+                INSERT INTO exhibit_metadata_values (exhibit_id, metadata_field_id, value, updated_by)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)
+            ");
+            $mvStmt->bind_param("iisi", $exhibit_id, $metadataFieldId, $newValue, $userId);
+            $mvStmt->execute();
+            $mvStmt->close();
+
+            insert_history_row(
+                $conn,
+                'exhibit_metadata_history',
+                $exhibit_id,
+                $hadRow ? 'UPDATE' : 'CREATE',
+                $userId,
+                json_encode([
+                    'field_key' => $f['field_key'],
+                    'field_label' => $f['field_label'],
+                    'old_value' => $oldValue,
+                    'new_value' => $newValue,
+                    'process' => $process_name,
+                ])
+            );
+        }
 
         if ($isEdit) {
             // Snapshot the state as it exists right now, before overwriting it.
@@ -173,12 +265,43 @@ include '../header.php';
 ?>
 <style>
     .content-wrapper {
-        max-width: 700px;
+        max-width: 1000px;
         margin: 120px auto 40px auto;
         padding: 20px;
         background: var(--polaris-surface);
         border-radius: 8px;
         box-shadow: 0 2px 10px rgba(255, 255, 255, 0.1);
+    }
+
+    .fields-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 25px;
+    }
+
+    .field-group.full-width {
+        grid-column: 1 / -1;
+    }
+
+    .checkbox-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 15px;
+    }
+
+    .checkbox-field input {
+        width: auto;
+    }
+
+    .checkbox-field label {
+        margin: 0;
+    }
+
+    @media (max-width: 640px) {
+        .fields-grid {
+            grid-template-columns: 1fr;
+        }
     }
 
     h2 {
@@ -203,9 +326,16 @@ include '../header.php';
         color: var(--polaris-danger-alt);
     }
 
+    .metapool-hint {
+        font-size: 12px;
+        cursor: help;
+        opacity: 0.7;
+    }
+
     input[type="text"],
     input[type="number"],
     input[type="date"],
+    input[type="datetime-local"],
     textarea {
         width: 100%;
         padding: 8px;
@@ -215,6 +345,15 @@ include '../header.php';
         color: var(--polaris-text);
         box-sizing: border-box;
         font-family: inherit;
+    }
+
+    input.hash-input {
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+    }
+
+    input.hash-input:invalid:not(:placeholder-shown) {
+        border-color: var(--polaris-danger-alt);
     }
 
     textarea {
@@ -298,12 +437,27 @@ include '../header.php';
 
     <form method="post"
         action="manage_exhibit_process.php?<?php echo $isEdit ? 'exhibit_process_id=' . $exhibit_process_id : 'exhibit_id=' . $exhibit_id . '&process_type_id=' . $process_type_id; ?>">
+        <div class="fields-grid">
         <?php foreach ($fields as $f): ?>
+        <?php $val = $existingValues[(int) $f['id']] ?? ($f['is_metapool'] ? ($metapoolCurrent[(int) $f['metadata_field_id']] ?? '') : ''); ?>
+        <div class="field-group <?php echo in_array($f['field_type'], ['textarea'], true) ? 'full-width' : ''; ?>">
+        <?php if ($f['field_type'] === 'checkbox'): ?>
+        <div class="checkbox-field">
+            <input type="checkbox" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>" value="1"
+                <?php echo $val === '1' ? 'checked' : ''; ?> <?php echo $f['is_required'] ? 'required' : ''; ?>>
+            <label for="field_<?php echo $f['id']; ?>">
+                <?php echo htmlspecialchars($f['field_label']); ?>
+                <?php if ($f['is_required']): ?><span class="required-star">*</span><?php endif; ?>
+                <?php if ($f['is_metapool']): ?><span class="metapool-hint" title="Shared exhibit attribute - updating it here updates it everywhere">&#128279;</span><?php endif; ?>
+            </label>
+        </div>
+        <?php else: ?>
         <label for="field_<?php echo $f['id']; ?>">
             <?php echo htmlspecialchars($f['field_label']); ?>
+            <?php if ($f['field_type'] === 'hash' && $f['hash_algorithm']): ?> (<?php echo htmlspecialchars($f['hash_algorithm']); ?>)<?php endif; ?>
             <?php if ($f['is_required']): ?><span class="required-star">*</span><?php endif; ?>
+            <?php if ($f['is_metapool']): ?><span class="metapool-hint" title="Shared exhibit attribute - updating it here updates it everywhere">&#128279;</span><?php endif; ?>
         </label>
-        <?php $val = $existingValues[(int) $f['id']] ?? ''; ?>
         <?php if ($f['field_type'] === 'textarea'): ?>
         <textarea name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
             <?php echo $f['is_required'] ? 'required' : ''; ?>><?php echo htmlspecialchars($val); ?></textarea>
@@ -311,8 +465,15 @@ include '../header.php';
         <input type="number" step="any" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
             value="<?php echo htmlspecialchars($val); ?>" <?php echo $f['is_required'] ? 'required' : ''; ?>>
         <?php elseif ($f['field_type'] === 'date'): ?>
-        <input type="date" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
+        <input type="datetime-local" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
             value="<?php echo htmlspecialchars($val); ?>" <?php echo $f['is_required'] ? 'required' : ''; ?>>
+        <?php elseif ($f['field_type'] === 'hash'): ?>
+        <?php $hashLength = ['MD5' => 32, 'SHA1' => 40, 'SHA256' => 64][$f['hash_algorithm']] ?? null; ?>
+        <input type="text" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>" class="hash-input"
+            value="<?php echo htmlspecialchars($val); ?>"
+            placeholder="<?php echo htmlspecialchars($f['hash_algorithm'] ?? ''); ?> hash"
+            <?php echo $hashLength ? 'pattern="[a-fA-F0-9]{' . $hashLength . '}" title="' . $hashLength . '-character hex ' . htmlspecialchars($f['hash_algorithm']) . ' hash" maxlength="' . $hashLength . '"' : ''; ?>
+            <?php echo $f['is_required'] ? 'required' : ''; ?>>
         <?php elseif ($f['field_type'] === 'lookup'): ?>
         <select name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
             <?php echo $f['is_required'] ? 'required' : ''; ?>>
@@ -330,7 +491,10 @@ include '../header.php';
         <input type="text" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
             value="<?php echo htmlspecialchars($val); ?>" <?php echo $f['is_required'] ? 'required' : ''; ?>>
         <?php endif; ?>
+        <?php endif; ?>
+        </div>
         <?php endforeach; ?>
+        </div>
 
         <label for="free_text">Notes</label>
         <!-- Hidden textarea holds the value actually submitted; Quill (self-hosted,

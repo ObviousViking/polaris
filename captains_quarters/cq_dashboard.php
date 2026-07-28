@@ -18,6 +18,7 @@ $canManageRolePermissions = user_can($conn, $userId, 'manage_role_permissions');
 $canViewTasking = user_can($conn, $userId, 'task_view');
 $canManageBackup = user_can($conn, $userId, 'manage_backup');
 $canManageSettings = user_can($conn, $userId, 'manage_settings');
+$canManageLookups = user_can($conn, $userId, 'manage_lookups');
 $canViewLogsIntegrity = user_can($conn, $userId, 'view_logs_integrity');
 $canManageProcesses = user_can($conn, $userId, 'manage_processes');
 $canViewReports = user_can($conn, $userId, 'view_reports');
@@ -42,6 +43,9 @@ include '../header.php';
         <?php endif; ?>
         <?php if ($canManageSettings): ?>
         <a href="manage_settings.php?embedded=1" target="cq-content">Settings</a>
+        <?php endif; ?>
+        <?php if ($canManageLookups): ?>
+        <a href="../cargo_hold/manage_system_details.php?embedded=1" target="cq-content">Manage Lookup Data</a>
         <?php endif; ?>
         <?php if ($canViewLogsIntegrity): ?>
         <a href="logs_and_integrity.php?embedded=1" target="cq-content">Logs &amp; Integrity</a>

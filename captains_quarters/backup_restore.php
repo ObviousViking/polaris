@@ -30,17 +30,26 @@ unset($_SESSION['restore_message'], $_SESSION['restore_message_type']);
     }
 
     .container {
-        max-width: 800px;
-        margin: 20px auto;
-        background: var(--polaris-surface);
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        max-width: 1400px;
+        margin: 20px 20px 0 20px;
         box-sizing: border-box;
     }
 
+    .cards-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+        gap: 20px;
+        align-items: start;
+    }
+
+    .cards-row .card {
+        margin-bottom: 0;
+        background: var(--polaris-surface);
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+
     h2 {
-        text-align: center;
         font-size: 24px;
         margin-bottom: 20px;
     }
@@ -165,37 +174,39 @@ unset($_SESSION['restore_message'], $_SESSION['restore_message_type']);
     </div>
     <?php endif; ?>
 
-    <div class="card">
-        <h3>Backup</h3>
-        <p>Downloads a single archive containing a full database dump and every uploaded file (avatars, exhibit
-            photos, exhibit documents, case documents). Keep it somewhere safe - it contains everything, including
-            password hashes.</p>
-        <a href="backup_download.php" class="action-btn">Download Full Backup</a>
-    </div>
+    <div class="cards-row">
+        <div class="card">
+            <h3>Backup</h3>
+            <p>Downloads a single archive containing a full database dump and every uploaded file (avatars, exhibit
+                photos, exhibit documents, case documents). Keep it somewhere safe - it contains everything, including
+                password hashes.</p>
+            <a href="backup_download.php" class="action-btn">Download Full Backup</a>
+        </div>
 
-    <div class="card">
-        <h3>Restore</h3>
-        <p><strong>This replaces the entire database and every uploaded file with what's in the backup you
-                upload.</strong> Anything created or changed since that backup was taken - cases, exhibits, users,
-            tasks, everything - will be gone. This cannot be undone from inside the app. You'll be logged out
-            afterwards and need to sign in again.</p>
+        <div class="card">
+            <h3>Restore</h3>
+            <p><strong>This replaces the entire database and every uploaded file with what's in the backup you
+                    upload.</strong> Anything created or changed since that backup was taken - cases, exhibits, users,
+                tasks, everything - will be gone. This cannot be undone from inside the app. You'll be logged out
+                afterwards and need to sign in again.</p>
 
-        <form method="post" action="restore_process.php" enctype="multipart/form-data"
-            onsubmit="return confirm('This will permanently replace the entire database and all uploaded files. Are you absolutely sure?');">
-            <label for="backup_file">Backup file (.tar.gz)</label>
-            <input type="file" name="backup_file" id="backup_file" accept=".gz,.tar.gz,.tgz" required>
+            <form method="post" action="restore_process.php<?php echo $embedded ? '?embedded=1' : ''; ?>" enctype="multipart/form-data"
+                onsubmit="return confirm('This will permanently replace the entire database and all uploaded files. Are you absolutely sure?');">
+                <label for="backup_file">Backup file (.tar.gz)</label>
+                <input type="file" name="backup_file" id="backup_file" accept=".gz,.tar.gz,.tgz" required>
 
-            <label for="confirm_phrase">Type RESTORE to confirm</label>
-            <input type="text" name="confirm_phrase" id="confirm_phrase" autocomplete="off" required>
+                <label for="confirm_phrase">Type RESTORE to confirm</label>
+                <input type="text" name="confirm_phrase" id="confirm_phrase" autocomplete="off" required>
 
-            <div class="checkbox-row">
-                <input type="checkbox" id="ack" required>
-                <label for="ack" style="margin:0;">I understand this permanently overwrites all current data and
-                    cannot be undone.</label>
-            </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="ack" required>
+                    <label for="ack" style="margin:0;">I understand this permanently overwrites all current data and
+                        cannot be undone.</label>
+                </div>
 
-            <button type="submit" class="action-btn danger-btn" style="margin-top:10px;">Restore from Backup</button>
-        </form>
+                <button type="submit" class="action-btn danger-btn" style="margin-top:10px;">Restore from Backup</button>
+            </form>
+        </div>
     </div>
 
     <?php if (!$embedded): ?>

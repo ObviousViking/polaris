@@ -53,6 +53,7 @@ const PERMISSION_DEFINITIONS = [
     ['key' => 'manage_processes', 'label' => 'Process Builder', 'description' => 'Define examination process templates and fields.', 'category' => 'System Administration', 'sort_order' => 84],
     ['key' => 'view_logs_integrity', 'label' => 'View Logs & Integrity', 'description' => 'View system activity logs and run integrity checks.', 'category' => 'System Administration', 'sort_order' => 85],
     ['key' => 'view_reports', 'label' => 'View System Reports', 'description' => 'View the system-wide reporting dashboard.', 'category' => 'System Administration', 'sort_order' => 86],
+    ['key' => 'manage_metadata_pool', 'label' => 'Manage Metadata Pool', 'description' => 'Define the shared exhibit metadata fields (make, model, serial, IMEI, etc.) available to Process Builder.', 'category' => 'System Administration', 'sort_order' => 87],
 ];
 
 // Permissions the 'user' role gets by default - everything that's not

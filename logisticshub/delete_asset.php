@@ -33,7 +33,7 @@ if (!$asset) {
 }
 
 if ($asset['deleted_at'] !== null) {
-    header("Location: manage_assets.php?embedded=1&error=already_deleted");
+    header("Location: manage_assets.php?error=already_deleted");
     exit();
 }
 
@@ -47,13 +47,13 @@ $openCheckoutStmt->fetch();
 $openCheckoutStmt->close();
 
 if ($openCount > 0) {
-    header("Location: manage_assets.php?embedded=1&error=checked_out");
+    header("Location: manage_assets.php?error=checked_out");
     exit();
 }
 
 $reason = require_deletion_reason_or_fail($conn);
 if ($reason === false) {
-    header("Location: manage_assets.php?embedded=1&error=reason_required");
+    header("Location: manage_assets.php?error=reason_required");
     exit();
 }
 
@@ -78,5 +78,5 @@ if ($ok) {
     insert_history_row($conn, 'asset_history', $asset_id, 'DELETE', $changedBy, json_encode($changes));
 }
 
-header("Location: manage_assets.php?embedded=1");
+header("Location: manage_assets.php");
 exit();

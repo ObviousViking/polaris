@@ -188,6 +188,7 @@ $unread_count = $notif_row['unread'];
             <?php
             if (isset($_SESSION['user_id'])) {
                 echo '<span>Logged in as: ' . htmlspecialchars($userName) . '</span>';
+                echo '<a href="/cargo_hold/my_workload.php" title="My Workload">📋 My Workload</a>';
                 echo '<a href="/notifications.php">🔔 (' . $unread_count . ')</a>';
                 echo '<a href="/logout.php">Logout</a>';
             }

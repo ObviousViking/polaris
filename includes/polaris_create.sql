@@ -669,6 +669,7 @@ CREATE TABLE `process_types` (
   `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   `description` text,
+  `sort_order` int NOT NULL DEFAULT '0',
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_by` int DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -679,6 +680,95 @@ CREATE TABLE `process_types` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
+-- Metadata pool: shared exhibit-identity attributes (make, model, serial,
+-- IMEI...) that live on the exhibit itself rather than on any one process -
+-- see includes/migrations/018_metadata_pool.sql for the full rationale.
+DROP TABLE IF EXISTS `exhibit_metadata_fields`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exhibit_metadata_fields` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `field_label` varchar(255) NOT NULL,
+  `field_key` varchar(100) NOT NULL,
+  `field_type` enum('text','number','date','checkbox','hash') NOT NULL DEFAULT 'text',
+  `hash_algorithm` enum('MD5','SHA1','SHA256') DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `field_key` (`field_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TABLE IF EXISTS `exhibit_metadata_values`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exhibit_metadata_values` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `exhibit_id` int NOT NULL,
+  `metadata_field_id` int NOT NULL,
+  `value` text,
+  `updated_by` int DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_exhibit_field` (`exhibit_id`,`metadata_field_id`),
+  KEY `metadata_field_id` (`metadata_field_id`),
+  KEY `updated_by` (`updated_by`),
+  CONSTRAINT `fk_exhibit_metadata_values_exhibit` FOREIGN KEY (`exhibit_id`) REFERENCES `exhibits` (`exhibit_id`),
+  CONSTRAINT `fk_exhibit_metadata_values_field` FOREIGN KEY (`metadata_field_id`) REFERENCES `exhibit_metadata_fields` (`id`),
+  CONSTRAINT `fk_exhibit_metadata_values_user` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TABLE IF EXISTS `exhibit_metadata_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exhibit_metadata_history` (
+  `history_id` int NOT NULL AUTO_INCREMENT,
+  `exhibit_id` int NOT NULL,
+  `action` enum('CREATE','UPDATE') NOT NULL,
+  `changed_by` int NOT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `changes` text,
+  `prev_hash` char(64) NOT NULL,
+  `row_hash` char(64) NOT NULL,
+  `prev_hmac` char(64) NOT NULL,
+  `hmac_hash` char(64) NOT NULL,
+  PRIMARY KEY (`history_id`),
+  KEY `exhibit_id` (`exhibit_id`),
+  KEY `changed_by` (`changed_by`),
+  CONSTRAINT `fk_exhibit_metadata_history_exhibit` FOREIGN KEY (`exhibit_id`) REFERENCES `exhibits` (`exhibit_id`),
+  CONSTRAINT `fk_exhibit_metadata_history_user` FOREIGN KEY (`changed_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TRIGGER IF EXISTS `exhibit_metadata_history_hash_chain`;
+CREATE TRIGGER `exhibit_metadata_history_hash_chain` BEFORE INSERT ON `exhibit_metadata_history`
+FOR EACH ROW
+BEGIN
+    DECLARE prev CHAR(64);
+    SELECT row_hash INTO prev FROM exhibit_metadata_history ORDER BY history_id DESC LIMIT 1;
+    IF prev IS NULL THEN
+        SET prev = REPEAT('0', 64);
+    END IF;
+    SET NEW.prev_hash = prev;
+    SET NEW.row_hash = SHA2(CONCAT_WS('|', NEW.exhibit_id, NEW.action, NEW.changed_by, NEW.changed_at, IFNULL(NEW.changes, ''), prev), 256);
+END;
+
+DROP TRIGGER IF EXISTS `exhibit_metadata_history_no_update`;
+CREATE TRIGGER `exhibit_metadata_history_no_update` BEFORE UPDATE ON `exhibit_metadata_history`
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'exhibit_metadata_history is append-only and cannot be modified';
+END;
+
+DROP TRIGGER IF EXISTS `exhibit_metadata_history_no_delete`;
+CREATE TRIGGER `exhibit_metadata_history_no_delete` BEFORE DELETE ON `exhibit_metadata_history`
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'exhibit_metadata_history is append-only and cannot be deleted from';
+END;
+
 DROP TABLE IF EXISTS `process_fields`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -687,16 +777,32 @@ CREATE TABLE `process_fields` (
   `process_type_id` int NOT NULL,
   `field_label` varchar(255) NOT NULL,
   `field_key` varchar(100) NOT NULL,
-  `field_type` enum('text','textarea','number','date','lookup') NOT NULL DEFAULT 'text',
+  `field_type` enum('text','textarea','number','date','lookup','checkbox','hash','metapool') NOT NULL DEFAULT 'text',
   -- Only meaningful when field_type = 'lookup' - a key into the fixed
   -- source list in includes/process_lookups.php (e.g. 'assets'), never a
   -- raw table/column name, so this is safe even though it's admin-editable.
   `lookup_source` varchar(50) DEFAULT NULL,
+  -- Only meaningful when lookup_source = 'assets' - restricts the option
+  -- list to one asset type (e.g. only "Software" assets), see
+  -- includes/process_lookups.php.
+  `lookup_asset_type_id` int DEFAULT NULL,
+  -- Only meaningful when field_type = 'hash' - which algorithm the value is
+  -- validated against (expected hex length).
+  `hash_algorithm` enum('MD5','SHA1','SHA256') DEFAULT NULL,
+  -- Only meaningful when field_type = 'metapool' - the field's actual type/
+  -- validation then comes from the linked exhibit_metadata_fields row
+  -- instead of this row's own field_type/hash_algorithm (see
+  -- captains_log/manage_exhibit_process.php).
+  `metadata_field_id` int DEFAULT NULL,
   `is_required` tinyint(1) NOT NULL DEFAULT '0',
   `sort_order` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `process_type_field_key` (`process_type_id`,`field_key`),
-  CONSTRAINT `process_fields_ibfk_1` FOREIGN KEY (`process_type_id`) REFERENCES `process_types` (`id`)
+  KEY `lookup_asset_type_id` (`lookup_asset_type_id`),
+  KEY `metadata_field_id` (`metadata_field_id`),
+  CONSTRAINT `process_fields_ibfk_1` FOREIGN KEY (`process_type_id`) REFERENCES `process_types` (`id`),
+  CONSTRAINT `fk_process_fields_lookup_asset_type` FOREIGN KEY (`lookup_asset_type_id`) REFERENCES `asset_types` (`id`),
+  CONSTRAINT `fk_process_fields_metadata_field` FOREIGN KEY (`metadata_field_id`) REFERENCES `exhibit_metadata_fields` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

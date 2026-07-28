@@ -12,6 +12,7 @@ require_once '../db.php';
 require_once '../includes/audit_render.php';
 require_once '../includes/permissions.php';
 
+$embedded = isset($_GET['embedded']);
 $task_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 $taskStmt = $conn->prepare("SELECT id, task_ref, custom_ref, description, assigned_to FROM tasks WHERE id = ? LIMIT 1");
@@ -21,7 +22,7 @@ $task = $taskStmt->get_result()->fetch_assoc();
 $taskStmt->close();
 
 if (!$task) {
-    header("Location: tasking.php");
+    header("Location: tasking.php" . ($embedded ? '?embedded=1' : ''));
     exit();
 }
 
@@ -31,7 +32,6 @@ if (!user_can($conn, (int) $_SESSION['user_id'], 'task_manage') && (int) $task['
     exit();
 }
 
-$embedded = isset($_GET['embedded']);
 if ($embedded) {
     require_once '../includes/embedded_header.php';
 } else {

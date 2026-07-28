@@ -143,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php endif; ?>
 
 <div class="container"
-    style="max-width: 800px; margin: 0 auto; padding: 20px; background-color: var(--polaris-surface-deep); border-radius: 8px;">
+    style="max-width: 800px; margin: 0 20px; padding: 20px; background-color: var(--polaris-surface-deep); border-radius: 8px;">
 
     <h1 style="margin-bottom: 20px;">Edit Task <?php echo htmlspecialchars($task['task_ref']); ?></h1>
 

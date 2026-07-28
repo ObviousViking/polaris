@@ -65,5 +65,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_logo'])) {
     }
 }
 
-header("Location: manage_settings.php");
+header("Location: manage_settings.php" . (isset($_GET['embedded']) ? '?embedded=1' : ''));
 exit();
