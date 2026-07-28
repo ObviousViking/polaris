@@ -148,44 +148,37 @@ if ($canDeleteExhibits) {
 }
 
 
-// Fetch exported items
-$exported_items = [];
+// Fetch case items (consolidated exported items/produced exhibits/etc -
+// see includes/migrations/014_case_items.sql)
+$case_items = [];
 $stmt = $conn->prepare("
-    SELECT ei.*,
-           CONCAT(u1.first_name, ' ', u1.last_name) AS extracted_by_name,
+    SELECT ci.*,
+           t.type_name,
+           CONCAT(u1.first_name, ' ', u1.last_name) AS created_by_name,
            CONCAT(u2.first_name, ' ', u2.last_name) AS assigned_to_name,
            e.exhibit_ref AS source_exhibit_ref
-    FROM exported_items ei
-    LEFT JOIN users u1 ON ei.extracted_by = u1.id
-    LEFT JOIN users u2 ON ei.assigned_to = u2.id
-    LEFT JOIN exhibits e ON ei.source_exhibit_id = e.exhibit_id
-    WHERE ei.job_id = ?
-    ORDER BY ei.extraction_ref
+    FROM case_items ci
+    JOIN case_item_types t ON ci.type_id = t.type_id
+    LEFT JOIN users u1 ON ci.created_by = u1.id
+    LEFT JOIN users u2 ON ci.assigned_to = u2.id
+    LEFT JOIN exhibits e ON ci.source_exhibit_id = e.exhibit_id
+    WHERE ci.job_id = ?
+    ORDER BY ci.item_ref
 ");
 $stmt->bind_param("i", $job_id);
 $stmt->execute();
 $result = $stmt->get_result();
 while ($row = $result->fetch_assoc()) {
-    $exported_items[] = $row;
+    $case_items[] = $row;
 }
 $stmt->close();
 
-// Fetch produced exhibits
-$produced_exhibits = [];
-$stmt = $conn->prepare("
-    SELECT pe.*, CONCAT(u.first_name, ' ', u.last_name) AS extracted_by_name
-    FROM produced_exhibits pe
-    LEFT JOIN users u ON pe.extracted_by = u.id
-    WHERE pe.job_id = ?
-    ORDER BY pe.exhibit_ref
-");
-$stmt->bind_param("i", $job_id);
-$stmt->execute();
-$result = $stmt->get_result();
-while ($row = $result->fetch_assoc()) {
-    $produced_exhibits[] = $row;
+// Active types, for the filter checkboxes above the table.
+$case_item_types = [];
+$typeResult = $conn->query("SELECT type_id, type_name FROM case_item_types WHERE is_active = 1 ORDER BY type_name");
+while ($row = $typeResult->fetch_assoc()) {
+    $case_item_types[] = $row;
 }
-$stmt->close();
 
 // Fetch case documents
 $case_documents = [];
@@ -517,7 +510,7 @@ include '../header.php';
         background: var(--polaris-divider);
     }
 
-    /* Exported Items and Produced Exhibits Sections */
+    /* Case Items Section */
     .full-section {
         background: var(--polaris-surface);
         padding: 20px;
@@ -533,6 +526,22 @@ include '../header.php';
         border-bottom: 1px solid var(--polaris-border);
         padding-bottom: 5px;
         margin-bottom: 10px;
+    }
+
+    .case-item-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 10px;
+        font-size: 13px;
+        color: var(--polaris-text-dim);
+    }
+
+    .case-item-filters label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
     }
 
     .full-section table {
@@ -688,6 +697,15 @@ include '../header.php';
             });
             $('#updates-content').after(pager);
         }
+    }
+
+    function filterCaseItems() {
+        const checked = new Set(
+            Array.from(document.querySelectorAll('.case-item-type-filter:checked')).map(cb => cb.value)
+        );
+        document.querySelectorAll('#caseItemsTable tbody tr[data-type-id]').forEach(row => {
+            row.style.display = checked.has(row.dataset.typeId) ? '' : 'none';
+        });
     }
 
     function fetchUpdates() {
@@ -909,41 +927,54 @@ include '../header.php';
                 </div>
                 <?php endif; ?>
             </div>
-            <!-- Exported Items Section -->
+            <!-- Case Items Section -->
             <div class="full-section">
-                <h3>Exported Items</h3>
+                <h3>Case Items</h3>
+                <?php if (!empty($case_item_types)): ?>
+                <div class="case-item-filters">
+                    <?php foreach ($case_item_types as $t): ?>
+                    <label>
+                        <input type="checkbox" class="case-item-type-filter" value="<?php echo $t['type_id']; ?>"
+                            checked onchange="filterCaseItems();">
+                        <?php echo htmlspecialchars($t['type_name']); ?>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
                 <div class="sheet-table-wrapper">
-                <table>
+                <table id="caseItemsTable">
                     <thead>
                         <tr>
-                            <th>Extraction Ref</th>
+                            <th>Item Ref</th>
+                            <th>Type</th>
                             <th>Source Exhibit</th>
                             <th>Description</th>
                             <th>Status</th>
-                            <th>Extracted On</th>
-                            <th>Extracted By</th>
+                            <th>Created On</th>
+                            <th>Created By</th>
                             <th>Assigned To</th>
                             <th>Last Handed To</th>
                             <th>History</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (empty($exported_items)): ?>
+                        <?php if (empty($case_items)): ?>
                         <tr>
-                            <td colspan="9">No exported items added yet.</td>
+                            <td colspan="10">No case items added yet.</td>
                         </tr>
                         <?php else: ?>
-                        <?php foreach ($exported_items as $item): ?>
-                        <tr>
+                        <?php foreach ($case_items as $item): ?>
+                        <tr data-type-id="<?php echo $item['type_id']; ?>">
                             <td><a
-                                    href="edit_exported_item.php?item_id=<?php echo htmlspecialchars($item['item_id']); ?>&job_id=<?php echo htmlspecialchars($job_id); ?>">
-                                    <?php echo htmlspecialchars($item['extraction_ref']); ?>
+                                    href="edit_case_item.php?item_id=<?php echo htmlspecialchars($item['item_id']); ?>&job_id=<?php echo htmlspecialchars($job_id); ?>">
+                                    <?php echo htmlspecialchars($item['item_ref']); ?>
                                 </a></td>
+                            <td><?php echo htmlspecialchars($item['type_name']); ?></td>
                             <td><?php echo htmlspecialchars($item['source_exhibit_ref'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['description'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['status'] ?? ''); ?></td>
-                            <td><?php echo htmlspecialchars($item['extracted_on'] ?? ''); ?></td>
-                            <td><?php echo htmlspecialchars($item['extracted_by_name'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($item['created_on'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($item['created_by_name'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['assigned_to_name'] ?? ''); ?></td>
                             <td>
                                 <?php if (!empty($item['last_handed_to'])): ?>
@@ -953,7 +984,7 @@ include '../header.php';
                             </td>
                             <td>
                                 <a class="btn btn-small"
-                                    href="view_exported_item_history.php?item_id=<?php echo $item['item_id']; ?>">View</a>
+                                    href="view_case_item_history.php?item_id=<?php echo $item['item_id']; ?>">View</a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -962,47 +993,8 @@ include '../header.php';
                 </table>
                 </div>
                 <br>
-                <a href="exported_items.php?job_id=<?php echo htmlspecialchars($job_id); ?>" class="add-btn btn-add">Add New
+                <a href="case_items.php?job_id=<?php echo htmlspecialchars($job_id); ?>" class="add-btn btn-add">Add New
                     Item</a>
-            </div>
-
-            <!-- Produced Exhibits Section -->
-            <div class="full-section">
-                <h3>Produced Exhibits</h3>
-                <div class="sheet-table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Exhibit Ref</th>
-                            <th>Description</th>
-                            <th>Produced</th>
-                            <th>Extracted By</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($produced_exhibits)): ?>
-                        <tr>
-                            <td colspan="4">No produced exhibits added yet.</td>
-                        </tr>
-                        <?php else: ?>
-                        <?php foreach ($produced_exhibits as $exhibit): ?>
-                        <tr>
-                            <td><a
-                                    href="edit_produced_exhibit.php?exhibit_id=<?php echo htmlspecialchars($exhibit['exhibit_id']); ?>&job_id=<?php echo htmlspecialchars($job_id); ?>">
-                                    <?php echo htmlspecialchars($exhibit['exhibit_ref']); ?>
-                                </a></td>
-                            <td><?php echo htmlspecialchars($exhibit['description'] ?? ''); ?></td>
-                            <td><?php echo htmlspecialchars($exhibit['produced_date'] ?? ''); ?></td>
-                            <td><?php echo htmlspecialchars($exhibit['extracted_by_name'] ?? ''); ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-                </div>
-                <br>
-                <a href="produced_exhibits.php?job_id=<?php echo htmlspecialchars($job_id); ?>" class="add-btn btn-add">Add New
-                    Exhibit</a>
             </div>
         </div>
 

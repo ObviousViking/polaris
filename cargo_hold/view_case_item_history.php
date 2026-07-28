@@ -16,18 +16,18 @@ if (!isset($_GET['item_id'])) {
 $item_id = intval($_GET['item_id']);
 
 // Fetch Item Details
-$stmt = $conn->prepare("SELECT extraction_ref, job_id FROM exported_items WHERE item_id = ?");
+$stmt = $conn->prepare("SELECT item_ref, job_id FROM case_items WHERE item_id = ?");
 $stmt->bind_param("i", $item_id);
 $stmt->execute();
-$stmt->bind_result($extraction_ref, $job_id);
+$stmt->bind_result($item_ref, $job_id);
 if (!$stmt->fetch()) {
-    die("Exported item not found.");
+    die("Case item not found.");
 }
 $stmt->close();
 
 // Fetch History
 $historyRecords = [];
-$histQuery = $conn->prepare("SELECT changed_at, action, changed_by, changes FROM exported_item_history WHERE item_id = ? ORDER BY changed_at DESC");
+$histQuery = $conn->prepare("SELECT changed_at, action, changed_by, changes FROM case_item_history WHERE item_id = ? ORDER BY changed_at DESC");
 $histQuery->bind_param("i", $item_id);
 $histQuery->execute();
 $histResult = $histQuery->get_result();
@@ -172,7 +172,7 @@ include('../header.php');
     </style>
 
     <div class="container">
-        <h2>History for Exported Item: <?php echo htmlspecialchars($extraction_ref); ?></h2>
+        <h2>History for Case Item: <?php echo htmlspecialchars($item_ref); ?></h2>
 
         <?php if (!empty($historyRecords)): ?>
         <table>

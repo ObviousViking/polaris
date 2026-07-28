@@ -52,13 +52,19 @@ $stats = [
 }
 
 /* Same vertical nav-bar pattern as Case Management/System Management
-   (.cq-nav / .lh-nav) - a left-hand column of buttons instead of top tabs,
+   (.cq-nav / .ch-nav) - a left-hand column of buttons instead of top tabs,
    just swapping their page-navigation links for tab-panel toggling here
-   since this is one page, not several. */
+   since this is one page, not several. Same fixed, edge-to-edge shell too
+   (.profile-shell mirrors .cq-shell exactly): pinned below the header,
+   running the full remaining viewport height, with .profile-content
+   scrolling independently inside it rather than the whole page scrolling. */
 .profile-shell {
     display: flex;
-    align-items: flex-start;
-    gap: 20px;
+    position: fixed;
+    top: 100px;
+    left: 0;
+    right: 0;
+    bottom: 0;
 }
 
 .profile-nav {
@@ -66,8 +72,11 @@ $stats = [
     display: flex;
     flex-direction: column;
     gap: 6px;
-    position: sticky;
-    top: 120px;
+    background: var(--polaris-surface);
+    padding: 15px 10px;
+    box-sizing: border-box;
+    height: 100%;
+    overflow-y: auto;
 }
 
 .tab-btn {
@@ -96,6 +105,10 @@ $stats = [
 .profile-content {
     flex: 1;
     min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
 }
 
 @media (max-width: 900px) {
@@ -106,8 +119,8 @@ $stats = [
     .profile-nav {
         flex-direction: row;
         flex-wrap: wrap;
+        height: auto;
         width: 100%;
-        position: static;
     }
 
     .tab-btn {
@@ -399,22 +412,6 @@ input[type="submit"]:hover {
 </style>
 
 <div class="content-wrapper">
-    <h2>User Profile for <?php echo htmlspecialchars(trim($first_name . ' ' . $last_name)); ?></h2>
-    <?php
-    if (isset($_SESSION['profile_message'])) {
-        echo '<div class="message success">' . htmlspecialchars($_SESSION['profile_message']) . '</div>';
-        unset($_SESSION['profile_message']);
-    }
-    if (isset($_SESSION['password_error'])) {
-        echo '<div class="message error">' . htmlspecialchars($_SESSION['password_error']) . '</div>';
-        unset($_SESSION['password_error']);
-    }
-    if (isset($_SESSION['password_success'])) {
-        echo '<div class="message success">' . htmlspecialchars($_SESSION['password_success']) . '</div>';
-        unset($_SESSION['password_success']);
-    }
-    ?>
-
     <div class="profile-shell">
         <div class="profile-nav">
             <button type="button" class="tab-btn active" data-tab="info-tab">User Info</button>
@@ -424,6 +421,21 @@ input[type="submit"]:hover {
         </div>
 
         <div class="profile-content">
+        <h2>User Profile for <?php echo htmlspecialchars(trim($first_name . ' ' . $last_name)); ?></h2>
+        <?php
+        if (isset($_SESSION['profile_message'])) {
+            echo '<div class="message success">' . htmlspecialchars($_SESSION['profile_message']) . '</div>';
+            unset($_SESSION['profile_message']);
+        }
+        if (isset($_SESSION['password_error'])) {
+            echo '<div class="message error">' . htmlspecialchars($_SESSION['password_error']) . '</div>';
+            unset($_SESSION['password_error']);
+        }
+        if (isset($_SESSION['password_success'])) {
+            echo '<div class="message success">' . htmlspecialchars($_SESSION['password_success']) . '</div>';
+            unset($_SESSION['password_success']);
+        }
+        ?>
         <!-- User Info + User Settings share one form/endpoint (update_profile.php
              saves them together), so both panels sit inside the same <form> with
              one shared Save button below the User Settings fields. -->

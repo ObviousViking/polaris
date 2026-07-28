@@ -28,18 +28,25 @@ while ($row = $exResult->fetch_assoc()) {
 }
 $exStmt->close();
 
+// Active item types, admin-configurable via manage_case_item_types.php.
+$types = [];
+$typeResult = $conn->query("SELECT type_id, type_name FROM case_item_types WHERE is_active = 1 ORDER BY type_name");
+while ($row = $typeResult->fetch_assoc()) {
+    $types[] = $row;
+}
+
 // Fetch logged-in user's ID and name
 $user_id = intval($_SESSION['user_id']);
 $stmt = $conn->prepare("SELECT id, CONCAT(first_name, ' ', last_name) AS full_name FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
-$stmt->bind_result($extracted_by_id, $extracted_by_name);
+$stmt->bind_result($created_by_id, $created_by_name);
 $stmt->fetch();
 $stmt->close();
 
-if (!$extracted_by_name) {
-    $extracted_by_name = "Unknown User";
-    $extracted_by_id = null;
+if (!$created_by_name) {
+    $created_by_name = "Unknown User";
+    $created_by_id = null;
 }
 
 // Fetch all users for assigned_to dropdown
@@ -53,33 +60,37 @@ while ($row = $result->fetch_assoc()) {
 $stmt->close();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $extraction_ref = strtoupper(trim($_POST['extraction_ref']));
+    $item_ref = strtoupper(trim($_POST['item_ref']));
+    $type_id = intval($_POST['type_id']);
     $description = trim($_POST['description']);
+    $notes = trim($_POST['notes']);
     $status = $_POST['status'];
-    $extracted_on = $_POST['extracted_on'] ?: date('Y-m-d');
+    $created_on = $_POST['created_on'] ?: date('Y-m-d');
     $assigned_to_id = !empty($_POST['assigned_to']) ? intval($_POST['assigned_to']) : null;
     $source_exhibit_id = !empty($_POST['source_exhibit_id']) ? intval($_POST['source_exhibit_id']) : null;
 
-    if ($extraction_ref === '') {
-        $message = "Extraction reference is required.";
+    if ($item_ref === '') {
+        $message = "Item reference is required.";
+    } elseif (empty($type_id)) {
+        $message = "Please select a type.";
     } elseif (!in_array($status, ['Awaiting Review', 'Being Reviewed', 'Reviewed', 'Not Reviewed'])) {
         $message = "Invalid status selected.";
     } else {
-        $dupCheck = $conn->prepare("SELECT COUNT(*) FROM exported_items WHERE UPPER(extraction_ref) = ? AND job_id = ?");
-        $dupCheck->bind_param("si", $extraction_ref, $job_id);
+        $dupCheck = $conn->prepare("SELECT COUNT(*) FROM case_items WHERE UPPER(item_ref) = ? AND job_id = ?");
+        $dupCheck->bind_param("si", $item_ref, $job_id);
         $dupCheck->execute();
         $dupCheck->bind_result($count);
         $dupCheck->fetch();
         $dupCheck->close();
 
         if ($count > 0) {
-            $message = "Extraction reference already exists for this job.";
+            $message = "Item reference already exists for this job.";
         } else {
             $stmt = $conn->prepare("
-                INSERT INTO exported_items (job_id, source_exhibit_id, extraction_ref, description, status, extracted_on, extracted_by, assigned_to)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO case_items (job_id, type_id, source_exhibit_id, item_ref, description, status, notes, created_on, created_by, assigned_to)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt->bind_param("iissssii", $job_id, $source_exhibit_id, $extraction_ref, $description, $status, $extracted_on, $extracted_by_id, $assigned_to_id);
+            $stmt->bind_param("iiisssssii", $job_id, $type_id, $source_exhibit_id, $item_ref, $description, $status, $notes, $created_on, $created_by_id, $assigned_to_id);
             if ($stmt->execute()) {
                 $newItemId = $conn->insert_id;
                 $sourceExhibitRef = '';
@@ -89,16 +100,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         break;
                     }
                 }
-                insert_history_row($conn, 'exported_item_history', $newItemId, 'CREATE', (int) $_SESSION['user_id'], json_encode([
-                    'extraction_ref' => $extraction_ref,
+                $typeName = '';
+                foreach ($types as $t) {
+                    if ($t['type_id'] == $type_id) {
+                        $typeName = $t['type_name'];
+                        break;
+                    }
+                }
+                insert_history_row($conn, 'case_item_history', $newItemId, 'CREATE', (int) $_SESSION['user_id'], json_encode([
+                    'item_ref' => $item_ref,
+                    'type' => $typeName,
                     'description' => $description,
+                    'notes' => $notes,
                     'status' => $status,
                     'source_exhibit' => $sourceExhibitRef,
                     'assigned_to' => $assigned_to_id,
                 ]));
-                $message = "Exported item added successfully.";
+                $message = "Case item added successfully.";
             } else {
-                $message = "Error adding exported item.";
+                $message = "Error adding case item.";
             }
             $stmt->close();
         }
@@ -162,7 +182,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     input[type="text"],
     input[type="date"],
-    select {
+    select,
+    textarea {
         width: 100%;
         padding: 8px;
         background: var(--polaris-bg);
@@ -170,6 +191,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         color: var(--polaris-text);
         border-radius: 4px;
         font-size: 14px;
+        box-sizing: border-box;
+        font-family: inherit;
     }
 
     input[readonly] {
@@ -212,16 +235,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </style>
 
     <div class="container">
-        <h2>Add Exported Item</h2>
+        <h2>Add Case Item</h2>
 
         <?php if (!empty($message)): ?>
         <div class="message"><?php echo htmlspecialchars($message); ?></div>
         <?php endif; ?>
 
         <form method="post">
-            <label for="extraction_ref">Extraction Reference</label>
-            <input type="text" name="extraction_ref" id="extraction_ref"
-                oninput="this.value = this.value.toUpperCase();" required>
+            <label for="item_ref">Item Reference</label>
+            <input type="text" name="item_ref" id="item_ref" oninput="this.value = this.value.toUpperCase();"
+                required>
+            <label for="type_id">Type</label>
+            <select name="type_id" id="type_id" required>
+                <option value="">Select Type</option>
+                <?php foreach ($types as $t): ?>
+                <option value="<?php echo $t['type_id']; ?>"><?php echo htmlspecialchars($t['type_name']); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
             <label for="source_exhibit_id">Source Exhibit</label>
             <select name="source_exhibit_id" id="source_exhibit_id">
                 <option value="">None / not derived from a single exhibit</option>
@@ -233,6 +264,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </select>
             <label for="description">Description</label>
             <input type="text" name="description" id="description">
+            <label for="notes">Notes</label>
+            <textarea name="notes" id="notes" rows="4"></textarea>
             <label for="status">Status</label>
             <select name="status" id="status" required>
                 <option value="Awaiting Review">Awaiting Review</option>
@@ -240,11 +273,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <option value="Reviewed">Reviewed</option>
                 <option value="Not Reviewed">Not Reviewed</option>
             </select>
-            <label for="extracted_on">Extracted On</label>
-            <input type="date" name="extracted_on" id="extracted_on" value="<?php echo date('Y-m-d'); ?>" readonly>
-            <label for="extracted_by">Extracted By</label>
-            <input type="text" id="extracted_by" value="<?php echo htmlspecialchars($extracted_by_name); ?>" readonly>
-            <input type="hidden" name="extracted_by" value="<?php echo htmlspecialchars($extracted_by_id); ?>">
+            <label for="created_on">Created On</label>
+            <input type="date" name="created_on" id="created_on" value="<?php echo date('Y-m-d'); ?>" readonly>
+            <label for="created_by">Created By</label>
+            <input type="text" id="created_by" value="<?php echo htmlspecialchars($created_by_name); ?>" readonly>
+            <input type="hidden" name="created_by" value="<?php echo htmlspecialchars($created_by_id); ?>">
             <label for="assigned_to">Assigned To</label>
             <select name="assigned_to" id="assigned_to">
                 <option value="">Unassigned</option>

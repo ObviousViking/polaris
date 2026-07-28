@@ -183,6 +183,26 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
+// Case items (working copies, produced exhibits, etc - see
+// includes/migrations/014_case_items.sql).
+$caseItems = [];
+$stmt = $conn->prepare("
+    SELECT ci.item_ref, ci.description, ci.notes, ci.status, ci.last_handed_to, ci.last_handed_to_at,
+           t.type_name, CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
+    FROM case_items ci
+    JOIN case_item_types t ON ci.type_id = t.type_id
+    LEFT JOIN users u ON ci.created_by = u.id
+    WHERE ci.job_id = ?
+    ORDER BY ci.item_ref
+");
+$stmt->bind_param("i", $job_id);
+$stmt->execute();
+$res = $stmt->get_result();
+while ($row = $res->fetch_assoc()) {
+    $caseItems[] = $row;
+}
+$stmt->close();
+
 // Just lists which documents are embeddable - case_report_previews.php
 // renders and caches the actual page images on demand (see loadAppendixPreviews()).
 $appendixManifest = [];
@@ -708,6 +728,10 @@ include '../header.php';
             <input type="checkbox" id="opt_case_documents" checked onchange="updateReport()">
             <label for="opt_case_documents">Case documents (list)</label>
         </div>
+        <div class="option-row">
+            <input type="checkbox" id="opt_case_items" checked onchange="updateReport()">
+            <label for="opt_case_items">Case items (list)</label>
+        </div>
 
         <h3>Documents Appendix</h3>
         <div class="option-row">
@@ -878,6 +902,36 @@ include '../header.php';
             <?php endif; ?>
         </div>
 
+        <div class="report-section-title" id="report-case-items-section">Case Items</div>
+        <div id="report-case-items">
+            <?php if (empty($caseItems)): ?>
+            <p class="empty-note">No case items added.</p>
+            <?php else: ?>
+            <ul class="doc-list">
+                <?php foreach ($caseItems as $item): ?>
+                <li>
+                    <strong><?php echo htmlspecialchars($item['item_ref']); ?></strong>
+                    (<?php echo htmlspecialchars($item['type_name']); ?>)
+                    <?php echo $item['description'] ? ' &ndash; ' . htmlspecialchars($item['description']) : ''; ?>
+                    <small>
+                        <?php echo htmlspecialchars($item['status'] ?? ''); ?>
+                        <?php if (!empty($item['created_by_name'])): ?>
+                        &middot; added by <?php echo htmlspecialchars($item['created_by_name']); ?>
+                        <?php endif; ?>
+                        <?php if (!empty($item['last_handed_to'])): ?>
+                        &middot; handed to <?php echo htmlspecialchars($item['last_handed_to']); ?>
+                        on <?php echo htmlspecialchars($item['last_handed_to_at']); ?>
+                        <?php endif; ?>
+                    </small>
+                    <?php if (!empty($item['notes'])): ?>
+                    <br><small><?php echo htmlspecialchars($item['notes']); ?></small>
+                    <?php endif; ?>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            <?php endif; ?>
+        </div>
+
         <div class="report-section-title" id="report-appendix-section" style="display:none;">Document Appendix</div>
         <div id="report-appendix">
             <?php if (empty($appendixManifest)): ?>
@@ -1039,6 +1093,7 @@ function updateReport() {
     var caseUpdatesOn = document.getElementById('opt_case_updates').checked;
     var commsOn = document.getElementById('opt_communications').checked;
     var caseDocsOn = document.getElementById('opt_case_documents').checked;
+    var caseItemsOn = document.getElementById('opt_case_items').checked;
     var appendixOn = document.getElementById('opt_appendix').checked;
 
     var visibleExhibitIds = {};
@@ -1074,6 +1129,9 @@ function updateReport() {
 
     document.getElementById('report-case-documents').style.display = caseDocsOn ? '' : 'none';
     document.getElementById('report-case-documents-section').style.display = caseDocsOn ? '' : 'none';
+
+    document.getElementById('report-case-items').style.display = caseItemsOn ? '' : 'none';
+    document.getElementById('report-case-items-section').style.display = caseItemsOn ? '' : 'none';
 
     document.querySelectorAll('.appendix-item').forEach(function(block) {
         var scope = block.getAttribute('data-scope');

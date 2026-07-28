@@ -34,13 +34,13 @@ $exhibits_query = "
 ";
 $exhibits_result = mysqli_query($conn, $exhibits_query);
 
-// Fetch exported items (extractions) assigned to this user.
+// Fetch case items assigned to this user.
 $extractions_stmt = $conn->prepare("
-    SELECT ei.item_id, ei.extraction_ref, ei.description, ei.status, ei.extracted_on, j.job_id, j.custom_ref
-    FROM exported_items ei
-    JOIN jobs j ON ei.job_id = j.job_id
-    WHERE ei.assigned_to = ?
-    ORDER BY ei.extracted_on DESC
+    SELECT ci.item_id, ci.item_ref, ci.description, ci.status, ci.created_on, j.job_id, j.custom_ref
+    FROM case_items ci
+    JOIN jobs j ON ci.job_id = j.job_id
+    WHERE ci.assigned_to = ?
+    ORDER BY ci.created_on DESC
 ");
 $extractions_stmt->bind_param("i", $user_id);
 $extractions_stmt->execute();
@@ -135,22 +135,22 @@ $extractions_result = $extractions_stmt->get_result();
         </table>
     </div>
 
-    <h3 style="margin-top: 30px;">Allocated Extractions</h3>
+    <h3 style="margin-top: 30px;">Allocated Case Items</h3>
     <div class="table-scroll">
         <table>
             <tr>
-                <th>Extraction Ref</th>
+                <th>Item Ref</th>
                 <th>Description</th>
                 <th>Job</th>
                 <th>Status</th>
-                <th>Extracted On</th>
+                <th>Created On</th>
                 <th>Action</th>
             </tr>
             <?php if (mysqli_num_rows($extractions_result) > 0): ?>
             <?php while ($item = mysqli_fetch_assoc($extractions_result)): ?>
             <tr>
-                <td><a href="/cargo_hold/edit_exported_item.php?item_id=<?php echo $item['item_id']; ?>" target="_top">
-                        <?php echo htmlspecialchars($item['extraction_ref']); ?></a></td>
+                <td><a href="/cargo_hold/edit_case_item.php?item_id=<?php echo $item['item_id']; ?>" target="_top">
+                        <?php echo htmlspecialchars($item['item_ref']); ?></a></td>
                 <td><?php echo htmlspecialchars($item['description'] ?? ''); ?></td>
                 <td><a href="/cargo_hold/job.php?job_id=<?php echo $item['job_id']; ?>" target="_top">
                         <?php echo htmlspecialchars($item['custom_ref']); ?></a></td>
@@ -165,14 +165,14 @@ $extractions_result = $extractions_stmt->get_result();
                     ?>
                     <span class="badge <?php echo $statusBadge; ?>"><?php echo htmlspecialchars($item['status']); ?></span>
                 </td>
-                <td><?php echo $item['extracted_on'] ? htmlspecialchars(date('d-m-Y', strtotime($item['extracted_on']))) : '-'; ?></td>
-                <td><a href="/cargo_hold/edit_exported_item.php?item_id=<?php echo $item['item_id']; ?>" target="_top"
+                <td><?php echo $item['created_on'] ? htmlspecialchars(date('d-m-Y', strtotime($item['created_on']))) : '-'; ?></td>
+                <td><a href="/cargo_hold/edit_case_item.php?item_id=<?php echo $item['item_id']; ?>" target="_top"
                         class="action-btn small">Edit</a></td>
             </tr>
             <?php endwhile; ?>
             <?php else: ?>
             <tr>
-                <td colspan="6" style="text-align:center;">No extractions assigned.</td>
+                <td colspan="6" style="text-align:center;">No case items assigned.</td>
             </tr>
             <?php endif; ?>
         </table>

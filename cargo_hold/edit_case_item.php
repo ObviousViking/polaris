@@ -1,10 +1,10 @@
 <?php
-// edit_exported_item.php
+// edit_case_item.php
 //
 // Mirrors edit_task.php's shape: same permission rule, same update pattern -
-// but changes now land in exported_item_history (hash-chained, same as
-// exhibit_history) rather than the generic audit_log, since these are
-// case-evidential records, not admin activity.
+// changes land in case_item_history (hash-chained, same as exhibit_history)
+// rather than the generic audit_log, since these are case-evidential
+// records, not admin activity.
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -16,7 +16,7 @@ require_once '../includes/permissions.php';
 
 $item_id = isset($_GET['item_id']) ? intval($_GET['item_id']) : 0;
 
-$stmt = $conn->prepare("SELECT * FROM exported_items WHERE item_id = ?");
+$stmt = $conn->prepare("SELECT * FROM case_items WHERE item_id = ?");
 $stmt->bind_param("i", $item_id);
 $stmt->execute();
 $item = $stmt->get_result()->fetch_assoc();
@@ -53,7 +53,15 @@ while ($row = $exResult->fetch_assoc()) {
 }
 $exStmt->close();
 
-function exported_item_exhibit_ref(array $exhibits, ?int $exhibitId): string
+// All types (not just active) so a historically-used-but-now-deactivated
+// type still shows correctly on an existing item.
+$types = [];
+$typeResult = $conn->query("SELECT type_id, type_name, is_active FROM case_item_types ORDER BY type_name");
+while ($row = $typeResult->fetch_assoc()) {
+    $types[] = $row;
+}
+
+function case_item_exhibit_ref(array $exhibits, ?int $exhibitId): string
 {
     if (!$exhibitId) {
         return '';
@@ -66,24 +74,45 @@ function exported_item_exhibit_ref(array $exhibits, ?int $exhibitId): string
     return '';
 }
 
+function case_item_type_name(array $types, ?int $typeId): string
+{
+    if (!$typeId) {
+        return '';
+    }
+    foreach ($types as $t) {
+        if ((int) $t['type_id'] === $typeId) {
+            return $t['type_name'];
+        }
+    }
+    return '';
+}
+
 $message = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'details') {
+    $type_id = intval($_POST['type_id'] ?? 0);
     $description = trim($_POST['description']);
+    $notes = trim($_POST['notes'] ?? '');
     $status = in_array($_POST['status'] ?? '', $validStatuses, true) ? $_POST['status'] : $item['status'];
-    $extracted_on = $_POST['extracted_on'] ?: null;
+    $created_on = $_POST['created_on'] ?: null;
     $assigned_to = !empty($_POST['assigned_to']) ? intval($_POST['assigned_to']) : null;
     $source_exhibit_id = !empty($_POST['source_exhibit_id']) ? intval($_POST['source_exhibit_id']) : null;
 
     $changes = [];
+    if ($type_id !== (int) $item['type_id']) {
+        $changes['Type'] = ['old' => case_item_type_name($types, (int) $item['type_id']), 'new' => case_item_type_name($types, $type_id)];
+    }
     if ($description !== ($item['description'] ?? '')) {
         $changes['Description'] = ['old' => $item['description'], 'new' => $description];
+    }
+    if ($notes !== ($item['notes'] ?? '')) {
+        $changes['Notes'] = ['old' => $item['notes'], 'new' => $notes];
     }
     if ($status !== $item['status']) {
         $changes['Status'] = ['old' => $item['status'], 'new' => $status];
     }
-    if ($extracted_on !== $item['extracted_on']) {
-        $changes['Extracted On'] = ['old' => $item['extracted_on'], 'new' => $extracted_on];
+    if ($created_on !== $item['created_on']) {
+        $changes['Created On'] = ['old' => $item['created_on'], 'new' => $created_on];
     }
     $oldAssignedTo = $item['assigned_to'] !== null ? (int) $item['assigned_to'] : null;
     if ($assigned_to !== $oldAssignedTo) {
@@ -100,29 +129,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'details
     }
     if ($source_exhibit_id !== ((int) $item['source_exhibit_id'] ?: null)) {
         $changes['Source Exhibit'] = [
-            'old' => exported_item_exhibit_ref($exhibits, (int) $item['source_exhibit_id'] ?: null),
-            'new' => exported_item_exhibit_ref($exhibits, $source_exhibit_id),
+            'old' => case_item_exhibit_ref($exhibits, (int) $item['source_exhibit_id'] ?: null),
+            'new' => case_item_exhibit_ref($exhibits, $source_exhibit_id),
         ];
     }
 
-    $stmt = $conn->prepare("UPDATE exported_items SET description = ?, status = ?, extracted_on = ?, assigned_to = ?, source_exhibit_id = ? WHERE item_id = ?");
-    $stmt->bind_param("sssiii", $description, $status, $extracted_on, $assigned_to, $source_exhibit_id, $item_id);
-    if ($stmt->execute()) {
-        if (!empty($changes)) {
-            insert_history_row($conn, 'exported_item_history', $item_id, 'UPDATE', (int) $_SESSION['user_id'], json_encode($changes));
-        }
-        $message = "Exported item updated.";
-
-        // Refresh for display below.
-        $stmt2 = $conn->prepare("SELECT * FROM exported_items WHERE item_id = ?");
-        $stmt2->bind_param("i", $item_id);
-        $stmt2->execute();
-        $item = $stmt2->get_result()->fetch_assoc();
-        $stmt2->close();
+    if (empty($type_id)) {
+        $message = "Please select a type.";
     } else {
-        $message = "Error updating item: " . $stmt->error;
+        $stmt = $conn->prepare("UPDATE case_items SET type_id = ?, description = ?, notes = ?, status = ?, created_on = ?, assigned_to = ?, source_exhibit_id = ? WHERE item_id = ?");
+        $stmt->bind_param("issssiii", $type_id, $description, $notes, $status, $created_on, $assigned_to, $source_exhibit_id, $item_id);
+        if ($stmt->execute()) {
+            if (!empty($changes)) {
+                insert_history_row($conn, 'case_item_history', $item_id, 'UPDATE', (int) $_SESSION['user_id'], json_encode($changes));
+            }
+            $message = "Case item updated.";
+
+            // Refresh for display below.
+            $stmt2 = $conn->prepare("SELECT * FROM case_items WHERE item_id = ?");
+            $stmt2->bind_param("i", $item_id);
+            $stmt2->execute();
+            $item = $stmt2->get_result()->fetch_assoc();
+            $stmt2->close();
+        } else {
+            $message = "Error updating item: " . $stmt->error;
+        }
+        $stmt->close();
     }
-    $stmt->close();
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'handover') {
     $handedTo = trim($_POST['handed_to'] ?? '');
     $handoverDate = $_POST['handover_date'] ?: date('Y-m-d');
@@ -131,16 +164,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'details
         $message = "Please enter who the item was handed to.";
     } else {
         $handoverAt = $handoverDate . ' ' . date('H:i:s');
-        $stmt = $conn->prepare("UPDATE exported_items SET last_handed_to = ?, last_handed_to_at = ? WHERE item_id = ?");
+        $stmt = $conn->prepare("UPDATE case_items SET last_handed_to = ?, last_handed_to_at = ? WHERE item_id = ?");
         $stmt->bind_param("ssi", $handedTo, $handoverAt, $item_id);
         if ($stmt->execute()) {
-            insert_history_row($conn, 'exported_item_history', $item_id, 'HANDOVER', (int) $_SESSION['user_id'], json_encode([
+            insert_history_row($conn, 'case_item_history', $item_id, 'HANDOVER', (int) $_SESSION['user_id'], json_encode([
                 'handed_to' => $handedTo,
                 'handover_date' => $handoverDate,
             ]));
             $message = "Handover recorded.";
 
-            $stmt2 = $conn->prepare("SELECT * FROM exported_items WHERE item_id = ?");
+            $stmt2 = $conn->prepare("SELECT * FROM case_items WHERE item_id = ?");
             $stmt2->bind_param("i", $item_id);
             $stmt2->execute();
             $item = $stmt2->get_result()->fetch_assoc();
@@ -194,7 +227,8 @@ include '../header.php';
 
     input[type="text"],
     input[type="date"],
-    select {
+    select,
+    textarea {
         width: 100%;
         padding: 8px;
         background: var(--polaris-bg);
@@ -203,6 +237,7 @@ include '../header.php';
         border-radius: 4px;
         font-size: 14px;
         box-sizing: border-box;
+        font-family: inherit;
     }
 
     input[readonly] {
@@ -250,7 +285,7 @@ include '../header.php';
 </style>
 
 <div class="container">
-    <h2>Edit Exported Item: <?php echo htmlspecialchars($item['extraction_ref']); ?></h2>
+    <h2>Edit Case Item: <?php echo htmlspecialchars($item['item_ref']); ?></h2>
 
     <?php if (!empty($message)): ?>
     <div class="message"><?php echo htmlspecialchars($message); ?></div>
@@ -258,8 +293,18 @@ include '../header.php';
 
     <form method="post">
         <input type="hidden" name="form" value="details">
-        <label for="extraction_ref">Extraction Reference</label>
-        <input type="text" id="extraction_ref" value="<?php echo htmlspecialchars($item['extraction_ref']); ?>" readonly>
+        <label for="item_ref">Item Reference</label>
+        <input type="text" id="item_ref" value="<?php echo htmlspecialchars($item['item_ref']); ?>" readonly>
+
+        <label for="type_id">Type</label>
+        <select name="type_id" id="type_id" required>
+            <?php foreach ($types as $t): ?>
+            <option value="<?php echo $t['type_id']; ?>"
+                <?php echo ((int) $item['type_id'] === (int) $t['type_id']) ? 'selected' : ''; ?>>
+                <?php echo htmlspecialchars($t['type_name']); ?><?php echo empty($t['is_active']) ? ' (inactive)' : ''; ?>
+            </option>
+            <?php endforeach; ?>
+        </select>
 
         <label for="source_exhibit_id">Source Exhibit</label>
         <select name="source_exhibit_id" id="source_exhibit_id">
@@ -275,6 +320,9 @@ include '../header.php';
         <label for="description">Description</label>
         <input type="text" name="description" id="description" value="<?php echo htmlspecialchars($item['description'] ?? ''); ?>">
 
+        <label for="notes">Notes</label>
+        <textarea name="notes" id="notes" rows="4"><?php echo htmlspecialchars($item['notes'] ?? ''); ?></textarea>
+
         <label for="status">Status</label>
         <select name="status" id="status" required>
             <?php foreach ($validStatuses as $statusOption): ?>
@@ -284,8 +332,8 @@ include '../header.php';
             <?php endforeach; ?>
         </select>
 
-        <label for="extracted_on">Extracted On</label>
-        <input type="date" name="extracted_on" id="extracted_on" value="<?php echo htmlspecialchars($item['extracted_on'] ?? ''); ?>">
+        <label for="created_on">Created On</label>
+        <input type="date" name="created_on" id="created_on" value="<?php echo htmlspecialchars($item['created_on'] ?? ''); ?>">
 
         <label for="assigned_to">Assigned To</label>
         <select name="assigned_to" id="assigned_to">
@@ -311,7 +359,7 @@ include '../header.php';
         <?php else: ?>
         No handover recorded yet.
         <?php endif; ?>
-        <a href="view_exported_item_history.php?item_id=<?php echo $item_id; ?>">View full history</a>
+        <a href="view_case_item_history.php?item_id=<?php echo $item_id; ?>">View full history</a>
     </p>
     <form method="post">
         <input type="hidden" name="form" value="handover">
