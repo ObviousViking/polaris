@@ -39,12 +39,12 @@ if ($isEdit) {
     $free_text_value = $existing['free_text'];
 
     $existingValues = [];
-    $valStmt = $conn->prepare("SELECT process_field_id, value FROM exhibit_process_values WHERE exhibit_process_id = ?");
+    $valStmt = $conn->prepare("SELECT metadata_field_id, value FROM exhibit_process_values WHERE exhibit_process_id = ?");
     $valStmt->bind_param("i", $exhibit_process_id);
     $valStmt->execute();
     $valResult = $valStmt->get_result();
     while ($row = $valResult->fetch_assoc()) {
-        $existingValues[(int) $row['process_field_id']] = $row['value'];
+        $existingValues[(int) $row['metadata_field_id']] = $row['value'];
     }
     $valStmt->close();
 } else {
@@ -73,30 +73,27 @@ if (!$exStmt->fetch()) {
 }
 $exStmt->close();
 
-// Field definitions for this process type, in display order. A 'metapool'
-// field doesn't own a type/hash_algorithm of its own - it's re-pointed here
-// at whatever the linked exhibit_metadata_fields row currently says, so all
-// the rendering/validation below can treat it exactly like a normal field.
+// Field definitions for this process type, in display order. Every field is
+// pool-bound now (see includes/migrations/019_unify_process_fields_into_pool.sql)
+// so $f['id'] here is the exhibit_metadata_fields id throughout this page -
+// process_fields is purely the (process_type_id, metadata_field_id,
+// is_required, sort_order) selection.
 $fields = [];
 $fieldStmt = $conn->prepare("
-    SELECT pf.id, pf.field_label, pf.field_key, pf.field_type, pf.lookup_source, pf.lookup_asset_type_id,
-           pf.hash_algorithm, pf.metadata_field_id, pf.is_required,
-           mf.field_type AS metapool_field_type, mf.hash_algorithm AS metapool_hash_algorithm
+    SELECT mf.id, mf.field_label, mf.field_key, mf.field_type, mf.lookup_source, mf.lookup_asset_type_id,
+           mf.hash_algorithm, mf.is_shared_value, pf.is_required
     FROM process_fields pf
-    LEFT JOIN exhibit_metadata_fields mf ON mf.id = pf.metadata_field_id
+    JOIN exhibit_metadata_fields mf ON mf.id = pf.metadata_field_id
     WHERE pf.process_type_id = ?
     ORDER BY pf.sort_order
 ");
 $fieldStmt->bind_param("i", $process_type_id);
 $fieldStmt->execute();
 $fieldResult = $fieldStmt->get_result();
-$metapoolFieldIds = [];
+$sharedFieldIds = [];
 while ($row = $fieldResult->fetch_assoc()) {
-    $row['is_metapool'] = $row['field_type'] === 'metapool' && $row['metadata_field_id'] !== null;
-    if ($row['is_metapool']) {
-        $row['field_type'] = $row['metapool_field_type'];
-        $row['hash_algorithm'] = $row['metapool_hash_algorithm'];
-        $metapoolFieldIds[] = (int) $row['metadata_field_id'];
+    if ($row['is_shared_value']) {
+        $sharedFieldIds[] = (int) $row['id'];
     }
     if ($row['field_type'] === 'lookup') {
         $assetTypeId = $row['lookup_asset_type_id'] !== null ? (int) $row['lookup_asset_type_id'] : null;
@@ -106,14 +103,14 @@ while ($row = $fieldResult->fetch_assoc()) {
 }
 $fieldStmt->close();
 
-// Current pool values for this exhibit, to pre-fill metapool fields that
+// Current pool values for this exhibit, to pre-fill shared-value fields that
 // this specific process instance hasn't recorded its own value for yet.
 $metapoolCurrent = [];
-if (!empty($metapoolFieldIds)) {
-    $placeholders = implode(',', array_fill(0, count($metapoolFieldIds), '?'));
-    $types = 'i' . str_repeat('i', count($metapoolFieldIds));
+if (!empty($sharedFieldIds)) {
+    $placeholders = implode(',', array_fill(0, count($sharedFieldIds), '?'));
+    $types = 'i' . str_repeat('i', count($sharedFieldIds));
     $mvStmt = $conn->prepare("SELECT metadata_field_id, value FROM exhibit_metadata_values WHERE exhibit_id = ? AND metadata_field_id IN ($placeholders)");
-    $mvStmt->bind_param($types, $exhibit_id, ...$metapoolFieldIds);
+    $mvStmt->bind_param($types, $exhibit_id, ...$sharedFieldIds);
     $mvStmt->execute();
     $mvResult = $mvStmt->get_result();
     while ($mrow = $mvResult->fetch_assoc()) {
@@ -157,10 +154,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // its own change tracked in exhibit_metadata_history regardless of
         // which process triggered it.
         foreach ($fields as $f) {
-            if (!$f['is_metapool']) {
+            if (!$f['is_shared_value']) {
                 continue;
             }
-            $metadataFieldId = (int) $f['metadata_field_id'];
+            $metadataFieldId = (int) $f['id'];
             $newValue = $fieldValues[(int) $f['id']];
 
             $curStmt = $conn->prepare("SELECT value FROM exhibit_metadata_values WHERE exhibit_id = ? AND metadata_field_id = ?");
@@ -218,7 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->close();
 
             $upsert = $conn->prepare("
-                INSERT INTO exhibit_process_values (exhibit_process_id, process_field_id, value)
+                INSERT INTO exhibit_process_values (exhibit_process_id, metadata_field_id, value)
                 VALUES (?, ?, ?)
                 ON DUPLICATE KEY UPDATE value = VALUES(value)
             ");
@@ -236,7 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $exhibit_process_id = $conn->insert_id;
             $stmt->close();
 
-            $insertVal = $conn->prepare("INSERT INTO exhibit_process_values (exhibit_process_id, process_field_id, value) VALUES (?, ?, ?)");
+            $insertVal = $conn->prepare("INSERT INTO exhibit_process_values (exhibit_process_id, metadata_field_id, value) VALUES (?, ?, ?)");
             foreach ($fieldValues as $fieldId => $val) {
                 $insertVal->bind_param("iis", $exhibit_process_id, $fieldId, $val);
                 $insertVal->execute();
@@ -439,7 +436,7 @@ include '../header.php';
         action="manage_exhibit_process.php?<?php echo $isEdit ? 'exhibit_process_id=' . $exhibit_process_id : 'exhibit_id=' . $exhibit_id . '&process_type_id=' . $process_type_id; ?>">
         <div class="fields-grid">
         <?php foreach ($fields as $f): ?>
-        <?php $val = $existingValues[(int) $f['id']] ?? ($f['is_metapool'] ? ($metapoolCurrent[(int) $f['metadata_field_id']] ?? '') : ''); ?>
+        <?php $val = $existingValues[(int) $f['id']] ?? ($f['is_shared_value'] ? ($metapoolCurrent[(int) $f['id']] ?? '') : ''); ?>
         <div class="field-group <?php echo in_array($f['field_type'], ['textarea'], true) ? 'full-width' : ''; ?>">
         <?php if ($f['field_type'] === 'checkbox'): ?>
         <div class="checkbox-field">
@@ -448,7 +445,7 @@ include '../header.php';
             <label for="field_<?php echo $f['id']; ?>">
                 <?php echo htmlspecialchars($f['field_label']); ?>
                 <?php if ($f['is_required']): ?><span class="required-star">*</span><?php endif; ?>
-                <?php if ($f['is_metapool']): ?><span class="metapool-hint" title="Shared exhibit attribute - updating it here updates it everywhere">&#128279;</span><?php endif; ?>
+                <?php if ($f['is_shared_value']): ?><span class="metapool-hint" title="Shared exhibit attribute - updating it here updates it everywhere">&#128279;</span><?php endif; ?>
             </label>
         </div>
         <?php else: ?>
@@ -456,7 +453,7 @@ include '../header.php';
             <?php echo htmlspecialchars($f['field_label']); ?>
             <?php if ($f['field_type'] === 'hash' && $f['hash_algorithm']): ?> (<?php echo htmlspecialchars($f['hash_algorithm']); ?>)<?php endif; ?>
             <?php if ($f['is_required']): ?><span class="required-star">*</span><?php endif; ?>
-            <?php if ($f['is_metapool']): ?><span class="metapool-hint" title="Shared exhibit attribute - updating it here updates it everywhere">&#128279;</span><?php endif; ?>
+            <?php if ($f['is_shared_value']): ?><span class="metapool-hint" title="Shared exhibit attribute - updating it here updates it everywhere">&#128279;</span><?php endif; ?>
         </label>
         <?php if ($f['field_type'] === 'textarea'): ?>
         <textarea name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
@@ -475,18 +472,18 @@ include '../header.php';
             <?php echo $hashLength ? 'pattern="[a-fA-F0-9]{' . $hashLength . '}" title="' . $hashLength . '-character hex ' . htmlspecialchars($f['hash_algorithm']) . ' hash" maxlength="' . $hashLength . '"' : ''; ?>
             <?php echo $f['is_required'] ? 'required' : ''; ?>>
         <?php elseif ($f['field_type'] === 'lookup'): ?>
-        <select name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
-            <?php echo $f['is_required'] ? 'required' : ''; ?>>
-            <option value="">Select&hellip;</option>
+        <!-- A datalist combo, not a locked <select> - lets the examiner pick a
+             known asset/user but also type something that isn't tracked as
+             one (e.g. software with no asset record), rather than being
+             stuck if the right value isn't in the list. -->
+        <input type="text" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
+            list="field_<?php echo $f['id']; ?>_options" value="<?php echo htmlspecialchars($val); ?>"
+            autocomplete="off" <?php echo $f['is_required'] ? 'required' : ''; ?>>
+        <datalist id="field_<?php echo $f['id']; ?>_options">
             <?php foreach ($f['lookup_options'] as $opt): ?>
-            <option value="<?php echo htmlspecialchars($opt); ?>" <?php echo $opt === $val ? 'selected' : ''; ?>>
-                <?php echo htmlspecialchars($opt); ?></option>
+            <option value="<?php echo htmlspecialchars($opt); ?>"></option>
             <?php endforeach; ?>
-            <?php if ($val !== '' && !in_array($val, $f['lookup_options'], true)): ?>
-            <option value="<?php echo htmlspecialchars($val); ?>" selected><?php echo htmlspecialchars($val); ?> (no
-                longer in list)</option>
-            <?php endif; ?>
-        </select>
+        </datalist>
         <?php else: ?>
         <input type="text" name="field_<?php echo $f['id']; ?>" id="field_<?php echo $f['id']; ?>"
             value="<?php echo htmlspecialchars($val); ?>" <?php echo $f['is_required'] ? 'required' : ''; ?>>

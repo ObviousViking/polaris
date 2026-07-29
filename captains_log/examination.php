@@ -7,6 +7,10 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once '../db.php';
 require_once '../includes/permissions.php';
+require_once '../includes/integrity.php';
+require_once '../includes/achievements.php';
+require_once '../includes/audit.php';
+require_once '../includes/deletion_reason.php';
 require_permission($conn, 'examination_view');
 
 // Validate exhibit_id
@@ -34,6 +38,90 @@ $exhibit = $exhibit_result->fetch_assoc();
 
 if (!$exhibit) {
     die("Exhibit not found.");
+}
+
+// Status stepper write path - a fast, in-page alternative to Edit Exhibit's
+// status dropdown. Must run (and redirect) before header.php's HTML output
+// below, same reason edit_exhibit.php does all its POST handling up front.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_exhibit_status'])) {
+    if (user_can($conn, (int) $_SESSION['user_id'], 'exhibit_edit')) {
+        $validStatuses = ['Not Yet Started', 'Imaging', 'Imaged', 'Being Analysed', 'On Hold', 'Complete'];
+        $newStatus = trim($_POST['new_status'] ?? '');
+        if (in_array($newStatus, $validStatuses, true) && $newStatus !== $exhibit['status']) {
+            $conn->begin_transaction();
+            try {
+                $stmt = $conn->prepare("UPDATE exhibits SET status = ? WHERE exhibit_id = ?");
+                $stmt->bind_param("si", $newStatus, $exhibit_id);
+                if (!$stmt->execute()) {
+                    throw new Exception($stmt->error);
+                }
+                $stmt->close();
+
+                $changes = json_encode(['Status' => ['old' => $exhibit['status'], 'new' => $newStatus]]);
+                if (!insert_history_row($conn, 'exhibit_history', $exhibit_id, 'UPDATE', (int) $_SESSION['user_id'], $changes)) {
+                    throw new Exception('History insert failed');
+                }
+                $conn->commit();
+                check_and_unlock_achievements($conn, (int) $_SESSION['user_id'], 'exhibits_completed');
+            } catch (Exception $e) {
+                $conn->rollback();
+                error_log("Status update failed for exhibit $exhibit_id: " . $e->getMessage());
+            }
+        }
+    }
+    header("Location: examination.php?exhibit_id=" . $exhibit_id);
+    exit();
+}
+
+// Delete an uploaded photo or document - same permission that gates
+// uploading them (document_manage), same "require a reason" setting as
+// every other delete in the app, logged to the tamper-evident audit_log
+// (not exhibit_history - this isn't a change to the exhibit record itself).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['delete_photo']) || isset($_POST['delete_document']))) {
+    if (user_can($conn, (int) $_SESSION['user_id'], 'document_manage')) {
+        $deleteReason = require_deletion_reason_or_fail($conn);
+        if ($deleteReason !== false) {
+            if (isset($_POST['delete_photo'])) {
+                $photoId = (int) $_POST['delete_photo'];
+                $stmt = $conn->prepare("SELECT file_name, file_path FROM exhibit_photos WHERE id = ? AND exhibit_id = ?");
+                $stmt->bind_param("ii", $photoId, $exhibit_id);
+                $stmt->execute();
+                $photo = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+
+                if ($photo) {
+                    $del = $conn->prepare("DELETE FROM exhibit_photos WHERE id = ?");
+                    $del->bind_param("i", $photoId);
+                    $del->execute();
+                    $del->close();
+                    if (is_file($photo['file_path'])) {
+                        @unlink($photo['file_path']);
+                    }
+                    log_audit_event($conn, 'exhibit_photo', $photoId, 'DELETE', (int) $_SESSION['user_id'], json_encode(['file_name' => $photo['file_name'], 'exhibit_id' => $exhibit_id, 'reason' => $deleteReason]));
+                }
+            } else {
+                $docId = (int) $_POST['delete_document'];
+                $stmt = $conn->prepare("SELECT original_filename, file_path FROM exhibit_documents WHERE id = ? AND exhibit_id = ?");
+                $stmt->bind_param("ii", $docId, $exhibit_id);
+                $stmt->execute();
+                $doc = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+
+                if ($doc) {
+                    $del = $conn->prepare("DELETE FROM exhibit_documents WHERE id = ?");
+                    $del->bind_param("i", $docId);
+                    $del->execute();
+                    $del->close();
+                    if (is_file($doc['file_path'])) {
+                        @unlink($doc['file_path']);
+                    }
+                    log_audit_event($conn, 'exhibit_document', $docId, 'DELETE', (int) $_SESSION['user_id'], json_encode(['file_name' => $doc['original_filename'], 'exhibit_id' => $exhibit_id, 'reason' => $deleteReason]));
+                }
+            }
+        }
+    }
+    header("Location: examination.php?exhibit_id=" . $exhibit_id);
+    exit();
 }
 
 // The examination page always shows the parent exhibit - a sub-exhibit's
@@ -76,7 +164,7 @@ while ($row = $sub_result->fetch_assoc()) {
 
 // Load uploaded photos
 $photo_stmt = $conn->prepare("
-    SELECT file_name, file_path
+    SELECT id, file_name, file_path
     FROM exhibit_photos
     WHERE exhibit_id = ?
     ORDER BY uploaded_at DESC
@@ -88,6 +176,7 @@ $photo_result = $photo_stmt->get_result();
 $photos = [];
 while ($row = $photo_result->fetch_assoc()) {
     $photos[] = [
+        'id' => $row['id'],
         'file_url' => str_replace($config['paths']['photo_dir_fs'], $config['paths']['photo_dir_url'], $row['file_path']),
         'file_name' => $row['file_name']
     ];
@@ -126,14 +215,32 @@ $job_row = $job_result->fetch_assoc();
 
 $job_id = $job_row ? $job_row['job_id'] : 0;
 
-// Active processes only for the "Add Process" picker.
+// Active processes for the "Add Process" picker, scoped to this exhibit's
+// type - a process with no process_type_exhibit_types rows at all is
+// unscoped (offered everywhere); otherwise it needs an explicit row for
+// this exhibit_type_id (assigned from the process's own edit form, see
+// captains_quarters/manage_processes.php).
 $processTypes = [];
-$ptResult = $conn->query("SELECT id, name FROM process_types WHERE is_active = 1 ORDER BY sort_order ASC");
+$ptStmt = $conn->prepare("
+    SELECT pt.id, pt.name
+    FROM process_types pt
+    WHERE pt.is_active = 1
+      AND (
+        NOT EXISTS (SELECT 1 FROM process_type_exhibit_types x WHERE x.process_type_id = pt.id)
+        OR EXISTS (SELECT 1 FROM process_type_exhibit_types x WHERE x.process_type_id = pt.id AND x.exhibit_type_id = ?)
+      )
+    ORDER BY pt.sort_order ASC
+");
+$ptStmt->bind_param("i", $exhibit['exhibit_type_id']);
+$ptStmt->execute();
+$ptResult = $ptStmt->get_result();
 while ($row = $ptResult->fetch_assoc()) {
     $processTypes[] = $row;
 }
+$ptStmt->close();
 
-// Processes recorded against this exhibit AND its sub-exhibits, in one list.
+// All processes recorded against this exhibit or its sub-exhibits - one
+// flat list, no pipeline/case-event split.
 $exhibitProcesses = [];
 $epStmt = $conn->prepare("
     SELECT ep.id, ep.exhibit_id, pt.name AS process_name, ep.updated_at,
@@ -154,6 +261,18 @@ while ($epRow = $epResult->fetch_assoc()) {
     $exhibitProcesses[] = $epRow;
 }
 $epStmt->close();
+
+// Status stepper - mirrors exhibits.status (6 real values) bucketed into 3
+// stages. Stage 2 covers everything that isn't the exact start/end value.
+$stage2Statuses = ['Imaging', 'Imaged', 'Being Analysed', 'On Hold'];
+$statusStage = 2;
+if ($exhibit['status'] === 'Not Yet Started') {
+    $statusStage = 1;
+} elseif ($exhibit['status'] === 'Complete') {
+    $statusStage = 3;
+}
+$canEditStatus = user_can($conn, (int) $_SESSION['user_id'], 'exhibit_edit');
+$canManageDocuments = user_can($conn, (int) $_SESSION['user_id'], 'document_manage');
 
 // Shared metadata pool values recorded for this exhibit (see
 // captains_quarters/manage_metadata_fields.php / manage_exhibit_process.php).
@@ -363,6 +482,33 @@ $mdStmt->close();
         background: var(--polaris-surface-deep);
     }
 
+    .photo-item {
+        position: relative;
+    }
+
+    .photo-delete-form {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+    }
+
+    .photo-delete-btn {
+        width: 20px;
+        height: 20px;
+        line-height: 18px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .photo-delete-btn:hover {
+        background: var(--polaris-danger);
+    }
+
     .doc-list {
         max-height: 260px;
         overflow-y: auto;
@@ -372,10 +518,23 @@ $mdStmt->close();
     }
 
     .doc-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
         margin-bottom: 10px;
         background: var(--polaris-bg);
         padding: 10px;
         border-radius: 5px;
+    }
+
+    .doc-delete-btn {
+        background: var(--polaris-error-bg);
+        flex-shrink: 0;
+    }
+
+    .doc-delete-btn:hover {
+        background: var(--polaris-danger);
     }
 
     .doc-list a {
@@ -414,177 +573,390 @@ $mdStmt->close();
     .sub-exhibit-table tr:hover td {
         background: var(--polaris-bg-alt);
     }
+
+    /* Tabbed layout - only one section visible at a time so the page reads
+       as a single working area instead of a long stack of panels. */
+    .tab-nav {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--polaris-border);
+        margin-bottom: 18px;
+    }
+
+    .tab-btn {
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: var(--polaris-text-secondary);
+        padding: 10px 16px;
+        font-size: 15px;
+        cursor: pointer;
+    }
+
+    .tab-btn:hover {
+        color: var(--polaris-text);
+    }
+
+    .tab-btn.active {
+        color: var(--polaris-text);
+        border-bottom-color: var(--polaris-accent);
+        font-weight: 600;
+    }
+
+    .tab-panel {
+        display: none;
+    }
+
+    .tab-panel.active {
+        display: block;
+    }
+
+    /* Status stepper - mirrors exhibits.status bucketed into 3 stages. */
+    .status-stepper {
+        display: flex;
+        align-items: flex-start;
+    }
+
+    .stepper-stage {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        background: transparent;
+        border: none;
+        padding: 4px 8px;
+        color: var(--polaris-text-secondary);
+        font-family: inherit;
+        font-size: 13px;
+    }
+
+    button.stepper-stage {
+        cursor: pointer;
+    }
+
+    .stepper-dot {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--polaris-divider);
+        border: 2px solid var(--polaris-border);
+        font-weight: 600;
+        color: var(--polaris-text-secondary);
+    }
+
+    .stepper-stage.active .stepper-dot {
+        background: var(--polaris-accent);
+        border-color: var(--polaris-accent);
+        color: var(--polaris-text);
+    }
+
+    .stepper-stage.complete .stepper-dot {
+        background: var(--polaris-success-strong);
+        border-color: var(--polaris-success-strong);
+        color: var(--polaris-text);
+    }
+
+    .stepper-label {
+        font-weight: 600;
+        color: var(--polaris-text);
+    }
+
+    .stepper-connector {
+        flex: 0 0 60px;
+        height: 3px;
+        background: var(--polaris-border);
+        margin-top: 15px;
+    }
+
+    .stepper-connector.complete {
+        background: var(--polaris-success-strong);
+    }
+
+    .stage2-picker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+    }
+
+    .stage2-picker select {
+        padding: 6px;
+        background: var(--polaris-bg);
+        color: var(--polaris-text);
+        border: 1px solid var(--polaris-border);
+        border-radius: 4px;
+    }
 </style>
 
 <div class="main-container">
 
-    <!-- Exhibit Info - spreadsheet style: one header row, one data row -->
-    <div class="panel">
+    <!-- Persistent identity strip - always shows which exhibit you're on,
+         regardless of which tab is active. -->
+    <div class="panel" style="margin-bottom: 15px;">
         <div class="info-header">
-            <h2>Exhibit <?= htmlspecialchars($exhibit['exhibit_ref']) ?></h2>
+            <h2>Exhibit <?= htmlspecialchars($exhibit['exhibit_ref']) ?>
+                <span style="font-size: 14px; font-weight: normal; color: var(--polaris-text-secondary);">
+                    &mdash; <?= htmlspecialchars($exhibit['type_name']) ?>
+                    &middot; <?= htmlspecialchars($exhibit['status']) ?>
+                    <?php if (!empty($exhibit['location_name'])): ?>
+                    &middot; <?= htmlspecialchars($exhibit['location_name']) ?>
+                    <?php endif; ?>
+                </span>
+            </h2>
             <a href="/cargo_hold/job.php?job_id=<?= $job_id ?>" class="btn btn-small btn-outline">&larr; Back to
                 Case</a>
         </div>
-        <div class="sheet-table-wrapper">
-            <table class="sheet-table">
-                <thead>
-                    <tr>
-                        <th>Exhibit Ref</th>
-                        <th>Type</th>
-                        <th>Bag Number</th>
-                        <th>Status</th>
-                        <th>Allocated To</th>
-                        <th>Urgency</th>
-                        <th>Location</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><?= htmlspecialchars($exhibit['exhibit_ref']) ?></td>
-                        <td><?= htmlspecialchars($exhibit['type_name']) ?></td>
-                        <td><?= htmlspecialchars($exhibit['bag_number']) ?></td>
-                        <td><?= htmlspecialchars($exhibit['status']) ?></td>
-                        <td><?= htmlspecialchars(trim($exhibit['first_name'] . ' ' . $exhibit['last_name'])) ?></td>
-                        <td><?= htmlspecialchars($exhibit['urgency']) ?></td>
-                        <td><?= htmlspecialchars($exhibit['location_name']) ?></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
     </div>
 
-    <?php if (!empty($exhibitMetadata)): ?>
-    <!-- Exhibit Metadata - the shared pool, not tied to any one process -->
+    <!-- Status - a fast, always-visible control for exhibits.status, not
+         specific to any one tab. -->
     <div class="panel">
-        <div class="info-header">
-            <h2>Exhibit Metadata</h2>
-            <a href="view_metadata_history.php?exhibit_id=<?= $exhibit_id ?>" class="btn btn-small btn-outline">History</a>
-        </div>
-        <div class="sheet-table-wrapper">
-            <table class="sheet-table">
-                <thead>
-                    <tr>
-                        <?php foreach ($exhibitMetadata as $md): ?>
-                        <th><?= htmlspecialchars($md['field_label']) ?></th>
-                        <?php endforeach; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <?php foreach ($exhibitMetadata as $md): ?>
-                        <td>
-                            <?php if ($md['field_type'] === 'checkbox'): ?>
-                            <?= $md['value'] === '1' ? 'Yes' : 'No' ?>
-                            <?php else: ?>
-                            <?= htmlspecialchars($md['value']) ?>
-                            <?php endif; ?>
-                        </td>
-                        <?php endforeach; ?>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <!-- Processes -->
-    <div class="panel">
-        <div class="info-header">
-            <h2>Processes</h2>
-            <?php if (!empty($processTypes)): ?>
-            <form class="add-process-form" method="get" action="manage_exhibit_process.php">
-                <select name="exhibit_id">
-                    <option value="<?= $exhibit_id ?>"><?= htmlspecialchars($exhibit['exhibit_ref']) ?> (this
-                        exhibit)</option>
-                    <?php foreach ($sub_exhibits as $sub): ?>
-                    <option value="<?= $sub['id'] ?>"><?= htmlspecialchars($sub['exhibit_ref']) ?> (sub-exhibit)
-                    </option>
-                    <?php endforeach; ?>
-                </select>
-                <select name="process_type_id" required onchange="this.form.submit()">
-                    <option value="">Select a process&hellip;</option>
-                    <?php foreach ($processTypes as $pt): ?>
-                    <option value="<?= $pt['id'] ?>"><?= htmlspecialchars($pt['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <noscript><button type="submit" class="btn btn-small btn-add">Add Process</button></noscript>
-            </form>
+        <h2 class="section-title">Status</h2>
+        <div class="status-stepper">
+            <?php if ($canEditStatus): ?>
+            <button type="button" class="stepper-stage<?= $statusStage === 1 ? ' active' : ($statusStage > 1 ? ' complete' : '') ?>"
+                data-stage="1">
+                <span class="stepper-dot"><?= $statusStage > 1 ? '&#10003;' : '1' ?></span>
+                <span class="stepper-label">Not Yet Started</span>
+            </button>
             <?php else: ?>
-            <span class="empty-note">No processes defined yet - set them up in System Management &rarr; Process
-                Builder.</span>
+            <span class="stepper-stage<?= $statusStage === 1 ? ' active' : ($statusStage > 1 ? ' complete' : '') ?>">
+                <span class="stepper-dot"><?= $statusStage > 1 ? '&#10003;' : '1' ?></span>
+                <span class="stepper-label">Not Yet Started</span>
+            </span>
+            <?php endif; ?>
+
+            <div class="stepper-connector<?= $statusStage > 1 ? ' complete' : '' ?>"></div>
+
+            <?php if ($canEditStatus): ?>
+            <button type="button" class="stepper-stage<?= $statusStage === 2 ? ' active' : ($statusStage > 2 ? ' complete' : '') ?>"
+                data-stage="2">
+                <span class="stepper-dot"><?= $statusStage > 2 ? '&#10003;' : '2' ?></span>
+                <span class="stepper-label"><?= $statusStage === 2 ? htmlspecialchars($exhibit['status']) : 'In Progress' ?></span>
+            </button>
+            <?php else: ?>
+            <span class="stepper-stage<?= $statusStage === 2 ? ' active' : ($statusStage > 2 ? ' complete' : '') ?>">
+                <span class="stepper-dot"><?= $statusStage > 2 ? '&#10003;' : '2' ?></span>
+                <span class="stepper-label"><?= $statusStage === 2 ? htmlspecialchars($exhibit['status']) : 'In Progress' ?></span>
+            </span>
+            <?php endif; ?>
+
+            <div class="stepper-connector<?= $statusStage > 2 ? ' complete' : '' ?>"></div>
+
+            <?php if ($canEditStatus): ?>
+            <button type="button" class="stepper-stage<?= $statusStage === 3 ? ' active' : '' ?>" data-stage="3">
+                <span class="stepper-dot">3</span>
+                <span class="stepper-label">Completed</span>
+            </button>
+            <?php else: ?>
+            <span class="stepper-stage<?= $statusStage === 3 ? ' active' : '' ?>">
+                <span class="stepper-dot">3</span>
+                <span class="stepper-label">Completed</span>
+            </span>
             <?php endif; ?>
         </div>
 
-        <?php if (empty($exhibitProcesses)): ?>
-        <p class="empty-note">No processes recorded against this exhibit or its sub-exhibits yet.</p>
-        <?php else: ?>
-        <div class="sheet-table-wrapper">
-            <table class="sheet-table">
-                <thead>
-                    <tr>
-                        <th>Process</th>
-                        <th>Exhibit Ref</th>
-                        <th>Entered By</th>
-                        <th>Date/Time</th>
-                        <th>Edit</th>
-                        <th>History</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($exhibitProcesses as $ep): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($ep['process_name']) ?></td>
-                        <td><?= htmlspecialchars($ep['exhibit_ref']) ?><?php if ((int) $ep['exhibit_id'] !== $exhibit_id): ?><span class="badge-sub">Sub</span><?php endif; ?></td>
-                        <td><?= htmlspecialchars($ep['entered_by_name'] ?? '') ?></td>
-                        <td><?= htmlspecialchars($ep['updated_at']) ?></td>
-                        <td><a href="manage_exhibit_process.php?exhibit_process_id=<?= $ep['id'] ?>"
-                                class="btn-small btn">Edit</a></td>
-                        <td><a href="view_process_history.php?exhibit_process_id=<?= $ep['id'] ?>"
-                                class="btn-small btn btn-outline">History</a></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+        <?php if ($canEditStatus): ?>
+        <div class="stage2-picker" id="stage2-picker" style="display:none;">
+            <label for="stage2-select" style="margin:0; color: var(--polaris-text-secondary);">Set to:</label>
+            <select id="stage2-select">
+                <?php foreach ($stage2Statuses as $s): ?>
+                <option value="<?= htmlspecialchars($s) ?>" <?= $exhibit['status'] === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="button" class="btn btn-small btn-add" onclick="submitStage2()">Set</button>
+            <button type="button" class="btn btn-small btn-outline"
+                onclick="document.getElementById('stage2-picker').style.display='none';">Cancel</button>
         </div>
+        <form method="post" action="examination.php?exhibit_id=<?= $exhibit_id ?>" id="status-form" style="display:none;">
+            <input type="hidden" name="update_exhibit_status" value="1">
+            <input type="hidden" name="new_status" id="status-form-value">
+        </form>
         <?php endif; ?>
     </div>
 
-    <!-- Sub-Exhibits -->
     <div class="panel">
-        <div class="info-header">
-            <h2>Sub-Exhibits</h2>
-            <button class="btn btn-small btn-add"
-                onclick="location.href='add_sub_exhibit.php?parent_id=<?= $exhibit_id ?>'">&#10133; Add
-                Sub-Exhibit</button>
+        <div class="tab-nav">
+            <button type="button" class="tab-btn active" data-tab="details">Details</button>
+            <button type="button" class="tab-btn" data-tab="subs">Sub-Exhibits<?php if (!empty($sub_exhibits)): ?>
+                    (<?= count($sub_exhibits) ?>)<?php endif; ?></button>
+            <button type="button" class="tab-btn" data-tab="processes">Processes<?php if (!empty($exhibitProcesses)): ?>
+                    (<?= count($exhibitProcesses) ?>)<?php endif; ?></button>
         </div>
 
-        <?php if (empty($sub_exhibits)): ?>
-        <p class="empty-note">No sub-exhibits found.</p>
-        <?php else: ?>
-        <div class="sheet-table-wrapper">
-            <table class="sub-exhibit-table">
-                <thead>
-                    <tr>
-                        <th>Reference</th>
-                        <th>Type</th>
-                        <th>Created By</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($sub_exhibits as $sub): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($sub['exhibit_ref']) ?></td>
-                        <td><?= htmlspecialchars($sub['type_name']) ?></td>
-                        <td><?= htmlspecialchars($sub['created_by_name']) ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+        <!-- Details - exhibit info plus the shared metadata pool for this exhibit -->
+        <div class="tab-panel active" data-tab-panel="details">
+            <div class="sheet-table-wrapper">
+                <table class="sheet-table">
+                    <thead>
+                        <tr>
+                            <th>Exhibit Ref</th>
+                            <th>Type</th>
+                            <th>Bag Number</th>
+                            <th>Status</th>
+                            <th>Allocated To</th>
+                            <th>Urgency</th>
+                            <th>Location</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><?= htmlspecialchars($exhibit['exhibit_ref']) ?></td>
+                            <td><?= htmlspecialchars($exhibit['type_name']) ?></td>
+                            <td><?= htmlspecialchars($exhibit['bag_number']) ?></td>
+                            <td><?= htmlspecialchars($exhibit['status']) ?></td>
+                            <td><?= htmlspecialchars(trim($exhibit['first_name'] . ' ' . $exhibit['last_name'])) ?>
+                            </td>
+                            <td><?= htmlspecialchars($exhibit['urgency']) ?></td>
+                            <td><?= htmlspecialchars($exhibit['location_name']) ?></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <?php if (!empty($exhibitMetadata)): ?>
+            <div class="info-header" style="margin-top: 20px;">
+                <h2 class="section-title" style="border: none; margin: 0; padding: 0;">Metadata</h2>
+                <a href="view_metadata_history.php?exhibit_id=<?= $exhibit_id ?>"
+                    class="btn btn-small btn-outline">History</a>
+            </div>
+            <div class="sheet-table-wrapper">
+                <table class="sheet-table">
+                    <thead>
+                        <tr>
+                            <?php foreach ($exhibitMetadata as $md): ?>
+                            <th><?= htmlspecialchars($md['field_label']) ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <?php foreach ($exhibitMetadata as $md): ?>
+                            <td>
+                                <?php if ($md['field_type'] === 'checkbox'): ?>
+                                <?= $md['value'] === '1' ? 'Yes' : 'No' ?>
+                                <?php else: ?>
+                                <?= htmlspecialchars($md['value']) ?>
+                                <?php endif; ?>
+                            </td>
+                            <?php endforeach; ?>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <?php else: ?>
+            <p class="empty-note" style="margin-top: 20px;">No metadata pool values recorded for this exhibit yet.
+            </p>
+            <?php endif; ?>
         </div>
-        <?php endif; ?>
+
+        <!-- Sub-Exhibits -->
+        <div class="tab-panel" data-tab-panel="subs">
+            <div class="info-header">
+                <h2 class="section-title" style="border: none; margin: 0; padding: 0;">Sub-Exhibits</h2>
+                <button class="btn btn-small btn-add"
+                    onclick="location.href='add_sub_exhibit.php?parent_id=<?= $exhibit_id ?>'">&#10133; Add
+                    Sub-Exhibit</button>
+            </div>
+
+            <?php if (empty($sub_exhibits)): ?>
+            <p class="empty-note">No sub-exhibits found.</p>
+            <?php else: ?>
+            <div class="sheet-table-wrapper">
+                <table class="sub-exhibit-table">
+                    <thead>
+                        <tr>
+                            <th>Reference</th>
+                            <th>Type</th>
+                            <th>Created By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($sub_exhibits as $sub): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($sub['exhibit_ref']) ?></td>
+                            <td><?= htmlspecialchars($sub['type_name']) ?></td>
+                            <td><?= htmlspecialchars($sub['created_by_name']) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Processes - every process instance recorded against this exhibit
+             or its sub-exhibits, plus the Add Process picker. -->
+        <div class="tab-panel" data-tab-panel="processes">
+            <div class="info-header">
+                <h2 class="section-title" style="border: none; margin: 0; padding: 0;">Processes</h2>
+                <?php if (!empty($processTypes)): ?>
+                <form class="add-process-form" method="get" action="manage_exhibit_process.php">
+                    <select name="exhibit_id">
+                        <option value="<?= $exhibit_id ?>"><?= htmlspecialchars($exhibit['exhibit_ref']) ?> (this
+                            exhibit)</option>
+                        <?php foreach ($sub_exhibits as $sub): ?>
+                        <option value="<?= $sub['id'] ?>"><?= htmlspecialchars($sub['exhibit_ref']) ?>
+                            (sub-exhibit)
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select name="process_type_id" required onchange="this.form.submit()">
+                        <option value="">Select a process&hellip;</option>
+                        <?php foreach ($processTypes as $pt): ?>
+                        <option value="<?= $pt['id'] ?>"><?= htmlspecialchars($pt['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <noscript><button type="submit" class="btn btn-small btn-add">Add Process</button></noscript>
+                </form>
+                <?php else: ?>
+                <span class="empty-note">No processes defined yet - set them up in System Management &rarr; Process
+                    Builder.</span>
+                <?php endif; ?>
+            </div>
+
+            <?php if (empty($exhibitProcesses)): ?>
+            <p class="empty-note">No processes recorded against this exhibit or its sub-exhibits yet.</p>
+            <?php else: ?>
+            <div class="sheet-table-wrapper">
+                <table class="sheet-table">
+                    <thead>
+                        <tr>
+                            <th>Process</th>
+                            <th>Exhibit Ref</th>
+                            <th>Entered By</th>
+                            <th>Date/Time</th>
+                            <th>Edit</th>
+                            <th>History</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($exhibitProcesses as $ep): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($ep['process_name']) ?></td>
+                            <td><?= htmlspecialchars($ep['exhibit_ref']) ?><?php if ((int) $ep['exhibit_id'] !== $exhibit_id): ?><span
+                                    class="badge-sub">Sub</span><?php endif; ?></td>
+                            <td><?= htmlspecialchars($ep['entered_by_name'] ?? '') ?></td>
+                            <td><?= htmlspecialchars($ep['updated_at']) ?></td>
+                            <td><a href="manage_exhibit_process.php?exhibit_process_id=<?= $ep['id'] ?>"
+                                    class="btn-small btn">Edit</a></td>
+                            <td><a href="view_process_history.php?exhibit_process_id=<?= $ep['id'] ?>"
+                                    class="btn-small btn btn-outline">History</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
     </div>
 
-    <!-- Photos & Documents -->
+    <!-- Photos & Documents - always visible, not tucked behind a tab. -->
     <div class="bottom-grid">
         <div class="panel">
             <h2 class="section-title">Uploaded Photos</h2>
@@ -593,13 +965,23 @@ $mdStmt->close();
             <?php else: ?>
             <div class="photo-grid">
                 <?php foreach ($photos as $photo): ?>
-                <img src="<?= htmlspecialchars($photo['file_url']) ?>" alt="Exhibit Photo">
+                <div class="photo-item">
+                    <img src="<?= htmlspecialchars($photo['file_url']) ?>" alt="Exhibit Photo">
+                    <?php if ($canManageDocuments): ?>
+                    <form method="post" action="examination.php?exhibit_id=<?= $exhibit_id ?>" class="photo-delete-form">
+                        <input type="hidden" name="delete_photo" value="<?= $photo['id'] ?>">
+                        <button type="submit" class="photo-delete-btn" title="Delete photo"
+                            onclick="return confirmDeleteWithReason(this.form, 'Delete this photo?');">&times;</button>
+                    </form>
+                    <?php endif; ?>
+                </div>
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
             <div style="text-align:center; margin-top:12px; display:flex; justify-content:center; gap:10px;">
                 <button class="btn btn-small" onclick="openUploadWindow()">&#128228; Upload</button>
-                <a href="view_images.php?exhibit_id=<?= $exhibit_id ?>" class="btn btn-small" target="_blank">&#128444;&#65039;
+                <a href="view_images.php?exhibit_id=<?= $exhibit_id ?>" class="btn btn-small"
+                    target="_blank">&#128444;&#65039;
                     View Images</a>
                 <a href="download_all_photos.php?exhibit_id=<?= $exhibit_id ?>" class="btn btn-small">&#128230;
                     Download All</a>
@@ -613,8 +995,17 @@ $mdStmt->close();
             <?php else: ?>
             <ul class="doc-list">
                 <?php foreach ($documents as $doc): ?>
-                <li><a href="download_document.php?doc_id=<?= htmlspecialchars($doc['id']) ?>">
-                        <?= htmlspecialchars($doc['original_filename']) ?> &#128229;</a></li>
+                <li>
+                    <a href="download_document.php?doc_id=<?= htmlspecialchars($doc['id']) ?>">
+                        <?= htmlspecialchars($doc['original_filename']) ?> &#128229;</a>
+                    <?php if ($canManageDocuments): ?>
+                    <form method="post" action="examination.php?exhibit_id=<?= $exhibit_id ?>" style="display:inline;">
+                        <input type="hidden" name="delete_document" value="<?= $doc['id'] ?>">
+                        <button type="submit" class="btn-small btn doc-delete-btn" title="Delete document"
+                            onclick="return confirmDeleteWithReason(this.form, 'Delete this document?');">Delete</button>
+                    </form>
+                    <?php endif; ?>
+                </li>
                 <?php endforeach; ?>
             </ul>
             <?php endif; ?>
@@ -628,6 +1019,38 @@ $mdStmt->close();
 
 <script>
 const exhibitId = <?= json_encode($exhibit_id) ?>;
+
+document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(function (b) {
+            b.classList.toggle('active', b.dataset.tab === tab);
+        });
+        document.querySelectorAll('.tab-panel').forEach(function (p) {
+            p.classList.toggle('active', p.dataset.tabPanel === tab);
+        });
+    });
+});
+
+document.querySelectorAll('.stepper-stage[data-stage]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const stage = btn.dataset.stage;
+        if (stage === '2') {
+            const picker = document.getElementById('stage2-picker');
+            picker.style.display = picker.style.display === 'none' ? 'flex' : 'none';
+            return;
+        }
+        const value = stage === '1' ? 'Not Yet Started' : 'Complete';
+        document.getElementById('status-form-value').value = value;
+        document.getElementById('status-form').submit();
+    });
+});
+
+function submitStage2() {
+    const select = document.getElementById('stage2-select');
+    document.getElementById('status-form-value').value = select.value;
+    document.getElementById('status-form').submit();
+}
 
 function openUploadWindow() {
     const width = 800;

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Exhibit Receipt </title>
+    <style>
+    body {
+        font-family: 'Arial', sans-serif;
+        background: #fff;
+        color: #000;
+        padding: 20px;
+        margin: 0;
+    }
+
+    .receipt {
+        max-width: 800px;
+        margin: 0 auto;
+        border: 2px solid #333;
+        padding: 20px;
+        background: #fff;
+    }
+
+    .header {
+        text-align: center;
+        border-bottom: 2px solid #333;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+    }
+
+    h1 {
+        margin: 0;
+        font-size: 24px;
+        color: #000;
+    }
+
+    .job-info {
+        font-size: 14px;
+        margin: 10px 0;
+    }
+
+    .details {
+        margin-bottom: 20px;
+        font-size: 14px;
+    }
+
+    .details div {
+        margin-bottom: 5px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        font-size: 14px;
+    }
+
+    th,
+    td {
+        border: 1px solid #666;
+        padding: 10px;
+        text-align: center;
+    }
+
+    th {
+        background: #f5f5f5;
+        color: #000;
+        font-weight: bold;
+    }
+
+    .signature-section {
+        margin-top: 60px;
+        font-size: 14px;
+    }
+
+    .signature-line {
+        margin-top: 20px;
+        border-bottom: 1px solid #333;
+        width: 100%;
+        height: 20px;
+    }
+
+    .no-print {
+        text-align: center;
+        margin-top: 20px;
+    }
+
+    button {
+        padding: 8px 20px;
+        background: #333;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #555;
+    }
+
+    @media print {
+        .no-print {
+            display: none;
+        }
+
+        body {
+            padding: 0;
+        }
+
+        .receipt {
+            border: none;
+            padding: 10px;
+        }
+    }
+    </style>
+</head>
+
+<body>
+    <div class="receipt">
+        <div class="header">
+            <h1>Exhibit Receipt </h1>
+            <div class="job-info">
+                <strong>Job Number:</strong> 26000            </div>
+        </div>
+
+        <div class="details">
+                        <div><strong>Booked In By:</strong> Alex Admin</div>
+            <div><strong>Delivered By:</strong> sdfsdfd</div>
+                    </div>
+
+        <table>
+            <tr>
+                <th>Exhibit Ref</th>
+                <th>Description</th>
+                                <th>Bag Number</th>
+                <th>Time In</th>
+                            </tr>
+                        <tr>
+                <td>EXH3</td>
+                <td>iphne</td>
+                                <td>EFSDFSDF</td>
+                <td>2026-07-29 11:30:37</td>
+                            </tr>
+                    </table>
+
+        <div class="signature-section">
+            <p><strong>Signature (Delivery):</strong></p>
+            <div class="signature-line"></div>
+        </div>
+
+        <div class="no-print">
+            <button onclick="window.print();">Print Receipt</button>
+        </div>
+    </div>
+</body>
+
+</html>
+    

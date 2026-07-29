@@ -680,9 +680,33 @@ CREATE TABLE `process_types` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
--- Metadata pool: shared exhibit-identity attributes (make, model, serial,
--- IMEI...) that live on the exhibit itself rather than on any one process -
--- see includes/migrations/018_metadata_pool.sql for the full rationale.
+-- Scopes a process type to one or more exhibit types - a pure many-to-many
+-- join, assigned from the process's own edit form (see
+-- captains_quarters/manage_processes.php). Zero rows for a process type
+-- means unscoped: offered on every exhibit type. See
+-- includes/migrations/021_drop_exhibit_process_pipeline_columns.sql - this
+-- table used to also carry an is_core/sort_order "pipeline checklist"
+-- concept that's since been rolled back in favour of a flat Processes list
+-- plus a status stepper on the examination page.
+DROP TABLE IF EXISTS `process_type_exhibit_types`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `process_type_exhibit_types` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `process_type_id` int NOT NULL,
+  `exhibit_type_id` int NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `process_type_exhibit_type` (`process_type_id`,`exhibit_type_id`),
+  KEY `exhibit_type_id` (`exhibit_type_id`),
+  CONSTRAINT `fk_ptet_process_type` FOREIGN KEY (`process_type_id`) REFERENCES `process_types` (`id`),
+  CONSTRAINT `fk_ptet_exhibit_type` FOREIGN KEY (`exhibit_type_id`) REFERENCES `exhibit_types` (`exhibit_type_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+-- Metadata pool: the sole catalog of fields a process can ask for (make,
+-- model, serial, IMEI, an acquisition hash, an examination date...) -
+-- see includes/migrations/018_metadata_pool.sql and
+-- 019_unify_process_fields_into_pool.sql for the full rationale.
 DROP TABLE IF EXISTS `exhibit_metadata_fields`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -690,13 +714,28 @@ CREATE TABLE `exhibit_metadata_fields` (
   `id` int NOT NULL AUTO_INCREMENT,
   `field_label` varchar(255) NOT NULL,
   `field_key` varchar(100) NOT NULL,
-  `field_type` enum('text','number','date','checkbox','hash') NOT NULL DEFAULT 'text',
+  `field_type` enum('text','textarea','number','date','checkbox','hash','lookup') NOT NULL DEFAULT 'text',
+  -- Only meaningful when field_type = 'lookup' - a key into the fixed
+  -- source list in includes/process_lookups.php (e.g. 'assets'), never a
+  -- raw table/column name, so this is safe even though it's admin-editable.
+  `lookup_source` varchar(50) DEFAULT NULL,
+  -- Only meaningful when lookup_source = 'assets' - restricts the option
+  -- list to one asset type, see includes/process_lookups.php.
+  `lookup_asset_type_id` int DEFAULT NULL,
   `hash_algorithm` enum('MD5','SHA1','SHA256') DEFAULT NULL,
+  -- Whether every process that includes this field shares one current
+  -- value per exhibit (e.g. IMEI, make, model, serial - true, the default)
+  -- or each process instance records its own independent value that never
+  -- overwrites another (e.g. an acquisition hash or an examination
+  -- timestamp, which can legitimately differ between separate runs).
+  `is_shared_value` tinyint(1) NOT NULL DEFAULT '1',
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `sort_order` int NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `field_key` (`field_key`)
+  UNIQUE KEY `field_key` (`field_key`),
+  KEY `lookup_asset_type_id` (`lookup_asset_type_id`),
+  CONSTRAINT `fk_exhibit_metadata_fields_lookup_asset_type` FOREIGN KEY (`lookup_asset_type_id`) REFERENCES `asset_types` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -772,36 +811,22 @@ END;
 DROP TABLE IF EXISTS `process_fields`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
+-- Purely a selection: which Metadata Pool fields a process asks for, in what
+-- order, and whether each is required. Field definitions (label, type,
+-- lookup/hash config) live solely on exhibit_metadata_fields now - removing
+-- a field from a process is just deleting its row here, always allowed,
+-- since no recorded value ever references this table (see
+-- exhibit_process_values below, which points at the pool field directly).
 CREATE TABLE `process_fields` (
   `id` int NOT NULL AUTO_INCREMENT,
   `process_type_id` int NOT NULL,
-  `field_label` varchar(255) NOT NULL,
-  `field_key` varchar(100) NOT NULL,
-  `field_type` enum('text','textarea','number','date','lookup','checkbox','hash','metapool') NOT NULL DEFAULT 'text',
-  -- Only meaningful when field_type = 'lookup' - a key into the fixed
-  -- source list in includes/process_lookups.php (e.g. 'assets'), never a
-  -- raw table/column name, so this is safe even though it's admin-editable.
-  `lookup_source` varchar(50) DEFAULT NULL,
-  -- Only meaningful when lookup_source = 'assets' - restricts the option
-  -- list to one asset type (e.g. only "Software" assets), see
-  -- includes/process_lookups.php.
-  `lookup_asset_type_id` int DEFAULT NULL,
-  -- Only meaningful when field_type = 'hash' - which algorithm the value is
-  -- validated against (expected hex length).
-  `hash_algorithm` enum('MD5','SHA1','SHA256') DEFAULT NULL,
-  -- Only meaningful when field_type = 'metapool' - the field's actual type/
-  -- validation then comes from the linked exhibit_metadata_fields row
-  -- instead of this row's own field_type/hash_algorithm (see
-  -- captains_log/manage_exhibit_process.php).
-  `metadata_field_id` int DEFAULT NULL,
+  `metadata_field_id` int NOT NULL,
   `is_required` tinyint(1) NOT NULL DEFAULT '0',
   `sort_order` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `process_type_field_key` (`process_type_id`,`field_key`),
-  KEY `lookup_asset_type_id` (`lookup_asset_type_id`),
+  UNIQUE KEY `process_type_metadata_field` (`process_type_id`,`metadata_field_id`),
   KEY `metadata_field_id` (`metadata_field_id`),
   CONSTRAINT `process_fields_ibfk_1` FOREIGN KEY (`process_type_id`) REFERENCES `process_types` (`id`),
-  CONSTRAINT `fk_process_fields_lookup_asset_type` FOREIGN KEY (`lookup_asset_type_id`) REFERENCES `asset_types` (`id`),
   CONSTRAINT `fk_process_fields_metadata_field` FOREIGN KEY (`metadata_field_id`) REFERENCES `exhibit_metadata_fields` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -836,13 +861,13 @@ DROP TABLE IF EXISTS `exhibit_process_values`;
 CREATE TABLE `exhibit_process_values` (
   `id` int NOT NULL AUTO_INCREMENT,
   `exhibit_process_id` int NOT NULL,
-  `process_field_id` int NOT NULL,
+  `metadata_field_id` int NOT NULL,
   `value` text,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `exhibit_process_field` (`exhibit_process_id`,`process_field_id`),
-  KEY `process_field_id` (`process_field_id`),
+  UNIQUE KEY `exhibit_process_metadata_field` (`exhibit_process_id`,`metadata_field_id`),
+  KEY `metadata_field_id` (`metadata_field_id`),
   CONSTRAINT `exhibit_process_values_ibfk_1` FOREIGN KEY (`exhibit_process_id`) REFERENCES `exhibit_processes` (`id`),
-  CONSTRAINT `exhibit_process_values_ibfk_2` FOREIGN KEY (`process_field_id`) REFERENCES `process_fields` (`id`)
+  CONSTRAINT `fk_exhibit_process_values_metadata_field` FOREIGN KEY (`metadata_field_id`) REFERENCES `exhibit_metadata_fields` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

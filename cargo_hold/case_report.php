@@ -101,11 +101,11 @@ if (!empty($allExhibitIds)) {
     if (!empty($processIds)) {
         $pPlaceholders = implode(',', array_fill(0, count($processIds), '?'));
         $stmt = $conn->prepare("
-            SELECT epv.exhibit_process_id, pf.field_label, epv.value
+            SELECT epv.exhibit_process_id, mf.field_label, epv.value
             FROM exhibit_process_values epv
-            JOIN process_fields pf ON pf.id = epv.process_field_id
+            JOIN exhibit_metadata_fields mf ON mf.id = epv.metadata_field_id
             WHERE epv.exhibit_process_id IN ($pPlaceholders) AND epv.value IS NOT NULL AND epv.value != ''
-            ORDER BY pf.sort_order ASC
+            ORDER BY mf.sort_order ASC
         ");
         $stmt->bind_param(str_repeat('i', count($processIds)), ...$processIds);
         $stmt->execute();

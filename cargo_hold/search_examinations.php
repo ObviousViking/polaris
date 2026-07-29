@@ -197,7 +197,7 @@ if ($mode === 'list_all') {
         $fieldParams[] = "%$keyword%";
     }
     if (!empty($field_label)) {
-        $fieldConditions[] = "pf.field_label LIKE ?";
+        $fieldConditions[] = "mf.field_label LIKE ?";
         $fieldTypes .= "s";
         $fieldParams[] = "%$field_label%";
     }
@@ -206,7 +206,7 @@ if ($mode === 'list_all') {
     $sql = "
         SELECT DISTINCT ep.id AS exhibit_process_id, ep.created_at
         FROM exhibit_process_values epv
-        JOIN process_fields pf ON pf.id = epv.process_field_id
+        JOIN exhibit_metadata_fields mf ON mf.id = epv.metadata_field_id
         JOIN exhibit_processes ep ON ep.id = epv.exhibit_process_id
         JOIN process_types pt ON pt.id = ep.process_type_id
         JOIN exhibits e ON e.exhibit_id = ep.exhibit_id
@@ -303,9 +303,9 @@ if ($mode === 'list_all') {
         $matchedFieldsById = [];
         if (!empty($fieldConditions)) {
             $mfSql = "
-                SELECT epv.exhibit_process_id, pf.field_label, epv.value
+                SELECT epv.exhibit_process_id, mf.field_label, epv.value
                 FROM exhibit_process_values epv
-                JOIN process_fields pf ON pf.id = epv.process_field_id
+                JOIN exhibit_metadata_fields mf ON mf.id = epv.metadata_field_id
                 WHERE epv.exhibit_process_id IN ($idPlaceholders) AND epv.value IS NOT NULL AND epv.value != ''" . $fieldWhere;
             $mfTypes = str_repeat('i', count($matchedIds)) . $fieldTypes;
             $mfParams = array_merge($matchedIds, $fieldParams);
@@ -346,7 +346,7 @@ while ($row = $result->fetch_assoc()) {
 $result->free();
 
 $fieldLabelOptions = [];
-$result = $conn->query("SELECT DISTINCT field_label FROM process_fields ORDER BY field_label");
+$result = $conn->query("SELECT DISTINCT field_label FROM exhibit_metadata_fields WHERE is_active = 1 ORDER BY field_label");
 while ($row = $result->fetch_assoc()) {
     $fieldLabelOptions[] = $row['field_label'];
 }
