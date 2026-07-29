@@ -44,51 +44,10 @@ if (!isset($_FILES['backup_file']) || $_FILES['backup_file']['error'] !== UPLOAD
 }
 
 $origName = $_FILES['backup_file']['name'];
-if (!preg_match('/\.(tar\.gz|tgz)$/i', $origName)) {
-    fail("Invalid file type - expected a .tar.gz backup archive (the format backup_download.php produces).");
+$result = backup_restore_archive($conn, $_FILES['backup_file']['tmp_name'], $origName);
+if (!$result['ok']) {
+    fail($result['error']);
 }
-
-$extractDir = sys_get_temp_dir() . '/polaris_restore_' . bin2hex(random_bytes(8));
-if (!mkdir($extractDir, 0700, true)) {
-    fail("Could not create a temp working directory for the restore.");
-}
-
-$extract = backup_run(['tar', 'xzf', $_FILES['backup_file']['tmp_name'], '-C', $extractDir]);
-if ($extract['exit_code'] !== 0 || !is_file($extractDir . '/database.sql')) {
-    error_log("restore_process: tar extract failed or database.sql missing: " . $extract['stderr']);
-    backup_rrmdir($extractDir);
-    fail("Restore failed - the uploaded file isn't a valid Polaris backup archive.");
-}
-
-$db = backup_db_env();
-$import = backup_run(
-    ['mysql', '-h', $db['host'], '-P', $db['port'], '-u', $db['user'], $db['name']],
-    ['MYSQL_PWD' => $db['pass']],
-    $extractDir . '/database.sql'
-);
-if ($import['exit_code'] !== 0) {
-    error_log("restore_process: mysql import failed: " . $import['stderr']);
-    backup_rrmdir($extractDir);
-    fail("Restore failed while importing the database. The existing database was not modified because the import runs in a single pass - check the server log for details.");
-}
-
-// Re-read data_root_dir since the DB was just replaced. Uses `cp` instead
-// of rename() since the temp dir and data root are on different filesystems.
-$dataRoot = rtrim(get_data_root($conn), '/');
-foreach (BACKUP_DATA_SUBFOLDERS as $sub) {
-    $extractedSub = $extractDir . '/' . $sub;
-    if (!is_dir($extractedSub)) {
-        continue;
-    }
-    $liveSub = $dataRoot . '/' . $sub;
-    backup_rrmdir($liveSub);
-    $copy = backup_run(['cp', '-a', $extractedSub, $liveSub]);
-    if ($copy['exit_code'] !== 0) {
-        error_log("restore_process: cp failed for $sub: " . $copy['stderr']);
-    }
-}
-
-backup_rrmdir($extractDir);
 
 log_audit_event($conn, 'backup', null, 'RESTORE', (int) $_SESSION['user_id'], json_encode(['filename' => $origName]));
 

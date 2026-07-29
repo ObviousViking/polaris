@@ -21,7 +21,26 @@ $db_user_display = getenv('DB_USER');
 $data_root = get_data_root($conn);
 $data_host_display = get_data_host_path_display();
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['restore_backup'])) {
+    require_once 'includes/backup.php';
+    if (trim($_POST['confirm_phrase'] ?? '') !== 'RESTORE') {
+        $error = "Restore cancelled - you must type RESTORE exactly to confirm.";
+    } elseif (!isset($_FILES['backup_file']) || $_FILES['backup_file']['error'] !== UPLOAD_ERR_OK) {
+        $uploadError = $_FILES['backup_file']['error'] ?? UPLOAD_ERR_NO_FILE;
+        $error = ($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE)
+            ? "Backup file is larger than this server currently allows to upload."
+            : "No backup file was uploaded, or the upload failed.";
+    } else {
+        $result = backup_restore_archive($conn, $_FILES['backup_file']['tmp_name'], $_FILES['backup_file']['name']);
+        if ($result['ok']) {
+            header("Location: login.php?restored=1");
+            exit();
+        }
+        $error = $result['error'];
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['restore_backup'])) {
     $first_name = trim($_POST['first_name'] ?? '');
     $last_name  = trim($_POST['last_name'] ?? '');
     $email      = trim($_POST['email'] ?? '');
@@ -37,7 +56,7 @@ if (!$data_root_exists) {
 }
 $data_root_writable = $data_root_exists && is_writable($data_root);
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['restore_backup'])) {
     if ($first_name === '' || $last_name === '' || $email === '' || $password === '') {
         $error = "Please fill in all fields.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -199,6 +218,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         text-align: center;
         font-size: 14px;
     }
+
+    input[type="file"] {
+        width: 100%;
+        max-width: 100%;
+        padding: 8px;
+        border: 1px solid var(--polaris-border);
+        border-radius: 4px;
+        background: var(--polaris-divider);
+        color: var(--polaris-text);
+        box-sizing: border-box;
+    }
+
+    .setup-divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        color: var(--polaris-text-faint);
+        font-size: 13px;
+        margin: 20px 0;
+    }
+
+    .setup-divider::before,
+    .setup-divider::after {
+        content: "";
+        flex: 1;
+        border-bottom: 1px solid var(--polaris-border);
+    }
+
+    .setup-divider span {
+        padding: 0 10px;
+    }
+
+    input[type="submit"].restore-submit {
+        background: var(--polaris-error-bg);
+        color: var(--polaris-error-text);
+    }
+
+    input[type="submit"].restore-submit:hover {
+        background: var(--polaris-danger);
+    }
     </style>
 </head>
 
@@ -263,6 +322,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <input type="password" id="password" name="password" required>
                 </div>
                 <input type="submit" value="Create Super User &amp; Continue">
+            </div>
+        </form>
+
+        <div class="setup-divider"><span>OR</span></div>
+
+        <form method="POST" action="" enctype="multipart/form-data"
+            onsubmit="return confirm('This will replace the empty database that was just created with everything in the backup you upload. Are you sure?');">
+            <div class="step">
+                <h2>Restore from an Existing Backup</h2>
+                <p class="info" style="text-align:left;">Already running Polaris elsewhere? Restore a full backup
+                    (database + uploaded files) here instead of creating a new super user - it brings its own users,
+                    cases, and settings with it.</p>
+                <div class="form-group">
+                    <label for="backup_file">Backup file (.tar.gz)</label>
+                    <input type="file" name="backup_file" id="backup_file" accept=".gz,.tar.gz,.tgz" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirm_phrase">Type RESTORE to confirm</label>
+                    <input type="text" name="confirm_phrase" id="confirm_phrase" autocomplete="off" required>
+                </div>
+                <input type="submit" name="restore_backup" value="Restore from Backup" class="restore-submit">
             </div>
         </form>
     </div>
