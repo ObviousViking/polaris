@@ -7,6 +7,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../db.php';
 require_once '../includes/permissions.php';
 require_once '../includes/exhibit_receipts.php';
+require_once '../includes/produced_item_receipts.php';
 require_permission($conn, 'case_view');
 
 // Ensure a job_id is provided.
@@ -172,6 +173,10 @@ while ($row = $result->fetch_assoc()) {
     $case_items[] = $row;
 }
 $stmt->close();
+
+// Any saved book-out/book-in receipts covering these produced items, for
+// the "View Receipt" links in the table below.
+$receiptsByCaseItem = get_receipts_for_produced_items($conn, array_column($case_items, 'item_id'));
 
 // Active types, for the filter checkboxes above the table.
 $case_item_types = [];
@@ -510,7 +515,7 @@ include '../header.php';
         background: var(--polaris-divider);
     }
 
-    /* Case Items Section */
+    /* Produced Items Section */
     .full-section {
         background: var(--polaris-surface);
         padding: 20px;
@@ -927,9 +932,9 @@ include '../header.php';
                 </div>
                 <?php endif; ?>
             </div>
-            <!-- Case Items Section -->
+            <!-- Produced Items Section -->
             <div class="full-section">
-                <h3>Case Items</h3>
+                <h3>Produced Items</h3>
                 <?php if (!empty($case_item_types)): ?>
                 <div class="case-item-filters">
                     <?php foreach ($case_item_types as $t): ?>
@@ -949,18 +954,20 @@ include '../header.php';
                             <th>Type</th>
                             <th>Source Exhibit</th>
                             <th>Description</th>
+                            <th>Files</th>
                             <th>Status</th>
                             <th>Created On</th>
                             <th>Created By</th>
                             <th>Assigned To</th>
-                            <th>Last Handed To</th>
+                            <th>Booked Out To</th>
                             <th>History</th>
+                            <th>Receipt</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($case_items)): ?>
                         <tr>
-                            <td colspan="10">No case items added yet.</td>
+                            <td colspan="12">No produced items added yet.</td>
                         </tr>
                         <?php else: ?>
                         <?php foreach ($case_items as $item): ?>
@@ -972,19 +979,27 @@ include '../header.php';
                             <td><?php echo htmlspecialchars($item['type_name']); ?></td>
                             <td><?php echo htmlspecialchars($item['source_exhibit_ref'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['description'] ?? ''); ?></td>
+                            <td><?php echo htmlspecialchars($item['file_count'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['status'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['created_on'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['created_by_name'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['assigned_to_name'] ?? ''); ?></td>
                             <td>
-                                <?php if (!empty($item['last_handed_to'])): ?>
-                                <?php echo htmlspecialchars($item['last_handed_to']); ?><br>
-                                <span style="color:var(--polaris-text-faint); font-size:12px;"><?php echo htmlspecialchars($item['last_handed_to_at']); ?></span>
+                                <?php if (!empty($item['booked_out_at']) && empty($item['returned_at'])): ?>
+                                <?php echo htmlspecialchars($item['booked_out_to']); ?><br>
+                                <span style="color:var(--polaris-text-faint); font-size:12px;"><?php echo htmlspecialchars($item['booked_out_at']); ?></span>
                                 <?php endif; ?>
                             </td>
                             <td>
                                 <a class="btn btn-small"
                                     href="view_case_item_history.php?item_id=<?php echo $item['item_id']; ?>">View</a>
+                            </td>
+                            <td>
+                                <?php if (!empty($receiptsByCaseItem[$item['item_id']])): ?>
+                                <?php $latestReceipt = end($receiptsByCaseItem[$item['item_id']]); ?>
+                                <a class="btn btn-small"
+                                    href="view_produced_item_receipt.php?receipt_id=<?php echo $latestReceipt['receipt_id']; ?>">View</a>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -995,6 +1010,8 @@ include '../header.php';
                 <br>
                 <a href="case_items.php?job_id=<?php echo htmlspecialchars($job_id); ?>" class="add-btn btn-add">Add New
                     Item</a>
+                <a class="add-btn" href="book_out_case_items.php?job_id=<?php echo $job_id; ?>">Book Out Item</a>
+                <a class="add-btn" href="book_in_case_items.php?job_id=<?php echo $job_id; ?>">Book In Item</a>
             </div>
         </div>
 

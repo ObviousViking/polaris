@@ -1073,11 +1073,13 @@ CREATE TABLE `case_items` (
   `description` varchar(255) DEFAULT NULL,
   `status` enum('Awaiting Review','Being Reviewed','Reviewed','Not Reviewed') DEFAULT 'Awaiting Review',
   `notes` text,
+  `file_count` int unsigned DEFAULT NULL,
   `created_on` date DEFAULT NULL,
   `created_by` int DEFAULT NULL,
   `assigned_to` int DEFAULT NULL,
-  `last_handed_to` varchar(255) DEFAULT NULL,
-  `last_handed_to_at` datetime DEFAULT NULL,
+  `booked_out_to` varchar(255) DEFAULT NULL,
+  `booked_out_at` datetime DEFAULT NULL,
+  `returned_at` datetime DEFAULT NULL,
   PRIMARY KEY (`item_id`),
   UNIQUE KEY `job_item_ref` (`job_id`, `item_ref`),
   KEY `type_id` (`type_id`),
@@ -1102,7 +1104,7 @@ DROP TABLE IF EXISTS `case_item_history`;
 CREATE TABLE `case_item_history` (
   `history_id` int NOT NULL AUTO_INCREMENT,
   `item_id` int NOT NULL,
-  `action` enum('CREATE','UPDATE','HANDOVER') NOT NULL,
+  `action` enum('CREATE','UPDATE','HANDOVER','BOOK_OUT','BOOK_IN','FILE_UPLOAD') NOT NULL,
   `changed_by` int NOT NULL,
   `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `changes` text,
@@ -1144,6 +1146,75 @@ FOR EACH ROW
 BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'case_item_history is append-only and cannot be deleted from';
 END;
+
+--
+-- Table structure for table `case_item_files`
+--
+
+-- Versioned file uploads for produced items - see
+-- includes/migrations/022_produced_items.sql. Append-only by convention;
+-- the current version of a file is the highest `version` for that item_id.
+
+DROP TABLE IF EXISTS `case_item_files`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `case_item_files` (
+  `file_id` int NOT NULL AUTO_INCREMENT,
+  `item_id` int NOT NULL,
+  `version` int NOT NULL,
+  `original_filename` varchar(255) NOT NULL,
+  `stored_filename` varchar(255) NOT NULL,
+  `file_path` text NOT NULL,
+  `file_size` int DEFAULT NULL,
+  `explainer` text,
+  `uploaded_by` int NOT NULL,
+  `uploaded_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`file_id`),
+  UNIQUE KEY `item_version` (`item_id`, `version`),
+  KEY `uploaded_by` (`uploaded_by`),
+  CONSTRAINT `fk_case_item_files_item` FOREIGN KEY (`item_id`) REFERENCES `case_items` (`item_id`),
+  CONSTRAINT `fk_case_item_files_user` FOREIGN KEY (`uploaded_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `case_item_receipts`
+--
+
+-- Persisted produced-item book-out/book-in receipts - same shape/approach
+-- as exhibit_receipts, against case_items instead of exhibits.
+
+DROP TABLE IF EXISTS `case_item_receipts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `case_item_receipts` (
+  `receipt_id` int NOT NULL AUTO_INCREMENT,
+  `job_id` int NOT NULL,
+  `receipt_type` enum('out','in') NOT NULL,
+  `booked_out_to` varchar(255) DEFAULT NULL,
+  `file_path` text NOT NULL,
+  `generated_by` int NOT NULL,
+  `generated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`receipt_id`),
+  KEY `job_id` (`job_id`),
+  KEY `generated_by` (`generated_by`),
+  CONSTRAINT `fk_case_item_receipts_job` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`job_id`),
+  CONSTRAINT `fk_case_item_receipts_user` FOREIGN KEY (`generated_by`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+DROP TABLE IF EXISTS `case_item_receipt_items`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `case_item_receipt_items` (
+  `receipt_id` int NOT NULL,
+  `item_id` int NOT NULL,
+  PRIMARY KEY (`receipt_id`, `item_id`),
+  KEY `item_id` (`item_id`),
+  CONSTRAINT `fk_case_item_receipt_items_receipt` FOREIGN KEY (`receipt_id`) REFERENCES `case_item_receipts` (`receipt_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_case_item_receipt_items_item` FOREIGN KEY (`item_id`) REFERENCES `case_items` (`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `forces`

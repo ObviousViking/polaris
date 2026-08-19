@@ -187,7 +187,8 @@ $stmt->close();
 // includes/migrations/014_case_items.sql).
 $caseItems = [];
 $stmt = $conn->prepare("
-    SELECT ci.item_ref, ci.description, ci.notes, ci.status, ci.last_handed_to, ci.last_handed_to_at,
+    SELECT ci.item_ref, ci.description, ci.notes, ci.status, ci.file_count,
+           ci.booked_out_to, ci.booked_out_at, ci.returned_at,
            t.type_name, CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
     FROM case_items ci
     JOIN case_item_types t ON ci.type_id = t.type_id
@@ -902,7 +903,7 @@ include '../header.php';
             <?php endif; ?>
         </div>
 
-        <div class="report-section-title" id="report-case-items-section">Case Items</div>
+        <div class="report-section-title" id="report-case-items-section">Produced Items</div>
         <div id="report-case-items">
             <?php if (empty($caseItems)): ?>
             <p class="empty-note">No case items added.</p>
@@ -918,9 +919,16 @@ include '../header.php';
                         <?php if (!empty($item['created_by_name'])): ?>
                         &middot; added by <?php echo htmlspecialchars($item['created_by_name']); ?>
                         <?php endif; ?>
-                        <?php if (!empty($item['last_handed_to'])): ?>
-                        &middot; handed to <?php echo htmlspecialchars($item['last_handed_to']); ?>
-                        on <?php echo htmlspecialchars($item['last_handed_to_at']); ?>
+                        <?php if ($item['file_count'] !== null): ?>
+                        &middot; <?php echo (int) $item['file_count']; ?> file(s)
+                        <?php endif; ?>
+                        <?php if (!empty($item['booked_out_at']) && empty($item['returned_at'])): ?>
+                        &middot; booked out to <?php echo htmlspecialchars($item['booked_out_to']); ?>
+                        on <?php echo htmlspecialchars($item['booked_out_at']); ?>
+                        <?php elseif (!empty($item['booked_out_at'])): ?>
+                        &middot; last booked out to <?php echo htmlspecialchars($item['booked_out_to']); ?>
+                        on <?php echo htmlspecialchars($item['booked_out_at']); ?>,
+                        returned <?php echo htmlspecialchars($item['returned_at']); ?>
                         <?php endif; ?>
                     </small>
                     <?php if (!empty($item['notes'])): ?>

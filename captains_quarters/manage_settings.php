@@ -278,7 +278,8 @@ $data_root = get_data_root($conn);
 
     <div class="card">
         <h3>Manage Storage Settings</h3>
-        <p>Avatars, exhibit photos, and exhibit documents are all stored under this root path (in fixed subfolders).
+        <p>Avatars, exhibit photos, exhibit documents, and produced item files are all stored under this root path
+            (in fixed subfolders).
             Host path: <strong><?php echo htmlspecialchars(get_data_host_path_display()); ?></strong> - only change
             the field below if you've changed the volume mount in docker-compose.yml.</p>
         <form method="post" action="manage_settings.php<?php echo $embedded ? '?embedded=1' : ''; ?>">

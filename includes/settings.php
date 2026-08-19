@@ -143,6 +143,8 @@ function get_storage_settings(mysqli $conn): array
             'report_logo_dir_fs'    => $root . 'report-branding/',
             'report_logo_dir_url'   => $urlRoot . 'report-branding/',
             'receipt_dir_fs'        => $root . 'exhibit-receipts/',
+            'produced_item_dir_fs'          => $root . 'produced-items/',
+            'produced_item_receipt_dir_fs'  => $root . 'produced-item-receipts/',
         ],
     ];
 }

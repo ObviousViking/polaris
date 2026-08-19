@@ -20,6 +20,7 @@ $user_id = $_SESSION['user_id'];
 $first_name = trim($_POST['first_name']);
 $last_name = trim($_POST['last_name']);
 $theme = ($_POST['theme'] ?? '') === 'light' ? 'light' : 'dark';
+$remove_avatar = isset($_POST['remove_avatar']);
 
 // Real image formats and their safe extensions, keyed by getimagesize()'s
 // detected type - not the client-supplied Content-Type or filename
@@ -71,10 +72,24 @@ if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] !== UPLOAD_ERR_NO_FIL
     }
 }
 
+// A new upload always wins over a "remove" checkbox left checked by mistake.
+$avatar_removed = false;
+if (!$avatar_filename && $remove_avatar) {
+    foreach (glob($avatar_dir_fs . 'avatar_' . $user_id . '.*') as $existingFile) {
+        // Avoid deleting the default avatar if it exists in the same folder
+        if (basename($existingFile) !== 'default_avatar.png') {
+            unlink($existingFile);
+        }
+    }
+    $avatar_removed = true;
+}
 
 if ($avatar_filename) {
     $stmt = $conn->prepare("UPDATE users SET first_name = ?, last_name = ?, avatar = ?, theme = ? WHERE id = ?");
     $stmt->bind_param("ssssi", $first_name, $last_name, $avatar_filename, $theme, $user_id);
+} elseif ($avatar_removed) {
+    $stmt = $conn->prepare("UPDATE users SET first_name = ?, last_name = ?, avatar = NULL, theme = ? WHERE id = ?");
+    $stmt->bind_param("sssi", $first_name, $last_name, $theme, $user_id);
 } else {
     $stmt = $conn->prepare("UPDATE users SET first_name = ?, last_name = ?, theme = ? WHERE id = ?");
     $stmt->bind_param("sssi", $first_name, $last_name, $theme, $user_id);

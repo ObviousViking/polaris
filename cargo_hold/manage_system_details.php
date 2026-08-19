@@ -114,7 +114,7 @@ if ($embedded) {
             <a href="manage_case_types.php<?php echo $embedded ? '?embedded=1' : ''; ?>" class="detail-card">
                 <span class="icon">📁</span> Case Types</a>
             <a href="manage_case_item_types.php<?php echo $embedded ? '?embedded=1' : ''; ?>" class="detail-card">
-                <span class="icon">📦</span> Case Item Types</a>
+                <span class="icon">📦</span> Produced Item Types</a>
         </div>
         <?php if (!$embedded): ?>
         <br>

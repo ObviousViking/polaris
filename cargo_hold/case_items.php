@@ -68,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $created_on = $_POST['created_on'] ?: date('Y-m-d');
     $assigned_to_id = !empty($_POST['assigned_to']) ? intval($_POST['assigned_to']) : null;
     $source_exhibit_id = !empty($_POST['source_exhibit_id']) ? intval($_POST['source_exhibit_id']) : null;
+    $file_count = ($_POST['file_count'] ?? '') !== '' ? intval($_POST['file_count']) : null;
 
     if ($item_ref === '') {
         $message = "Item reference is required.";
@@ -87,10 +88,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Item reference already exists for this job.";
         } else {
             $stmt = $conn->prepare("
-                INSERT INTO case_items (job_id, type_id, source_exhibit_id, item_ref, description, status, notes, created_on, created_by, assigned_to)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO case_items (job_id, type_id, source_exhibit_id, item_ref, description, status, notes, file_count, created_on, created_by, assigned_to)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt->bind_param("iiisssssii", $job_id, $type_id, $source_exhibit_id, $item_ref, $description, $status, $notes, $created_on, $created_by_id, $assigned_to_id);
+            $stmt->bind_param("iiissssisii", $job_id, $type_id, $source_exhibit_id, $item_ref, $description, $status, $notes, $file_count, $created_on, $created_by_id, $assigned_to_id);
             if ($stmt->execute()) {
                 $newItemId = $conn->insert_id;
                 $sourceExhibitRef = '';
@@ -115,10 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'status' => $status,
                     'source_exhibit' => $sourceExhibitRef,
                     'assigned_to' => $assigned_to_id,
+                    'file_count' => $file_count,
                 ]));
-                $message = "Case item added successfully.";
+                $message = "Produced item added successfully.";
             } else {
-                $message = "Error adding case item.";
+                $message = "Error adding produced item.";
             }
             $stmt->close();
         }
@@ -235,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </style>
 
     <div class="container">
-        <h2>Add Case Item</h2>
+        <h2>Add Produced Item</h2>
 
         <?php if (!empty($message)): ?>
         <div class="message"><?php echo htmlspecialchars($message); ?></div>
@@ -266,6 +268,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="text" name="description" id="description">
             <label for="notes">Notes</label>
             <textarea name="notes" id="notes" rows="4"></textarea>
+            <label for="file_count">Number of Files</label>
+            <input type="text" name="file_count" id="file_count" inputmode="numeric" pattern="[0-9]*"
+                placeholder="Not all item types need this - leave blank if not applicable">
             <label for="status">Status</label>
             <select name="status" id="status" required>
                 <option value="Awaiting Review">Awaiting Review</option>

@@ -214,7 +214,7 @@ $res->free();
     </script>
 
     <div class="container">
-        <h2>Manage Case Item Types</h2>
+        <h2>Manage Produced Item Types</h2>
 
         <?php if (!empty($message)): ?>
         <div class="message"><?php echo htmlspecialchars($message); ?></div>

@@ -21,10 +21,12 @@ $stmt->bind_result($first_name, $last_name, $email, $avatar, $theme);
 $stmt->fetch();
 $stmt->close();
 
-// Use a default avatar if none is set.
-if (empty($avatar)) {
-    $avatar = 'default_avatar.png'; // Ensure this file exists in the configured avatar_dir_fs
-}
+// Use a bundled generic default avatar if the user hasn't uploaded one of
+// their own - it ships with the app code, not the data volume, so it's
+// always there regardless of storage path or deployment.
+$avatar_src = empty($avatar)
+    ? '/assets/img/default_avatar.svg'
+    : $avatar_dir_url . $avatar;
 
 $achievements = get_achievements_for_user($conn, $user_id);
 $unlockedCount = count(array_filter($achievements, fn($a) => $a['unlocked_at'] !== null));
@@ -177,6 +179,16 @@ $stats = [
     display: block;
     margin-bottom: 20px;
     object-fit: cover;
+}
+
+.remove-avatar-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: normal;
+    color: var(--polaris-text-muted);
 }
 
 label {
@@ -443,10 +455,15 @@ input[type="submit"]:hover {
         <div id="info-tab" class="tab-panel active">
             <div class="form-card profile-form-body">
                 <div>
-                    <!-- Display avatar using the URL path -->
-                    <img src="<?php echo htmlspecialchars($avatar_dir_url . $avatar); ?>" alt="Avatar" class="avatar">
+                    <!-- Display avatar: uploaded one from the data volume, or the bundled default -->
+                    <img src="<?php echo htmlspecialchars($avatar_src); ?>" alt="Avatar" class="avatar">
                     <label for="avatar">Change Avatar:</label>
                     <input type="file" name="avatar" id="avatar" accept="image/*">
+                    <?php if (!empty($avatar)): ?>
+                    <label class="remove-avatar-label">
+                        <input type="checkbox" name="remove_avatar" value="1"> Remove current avatar (reset to default)
+                    </label>
+                    <?php endif; ?>
                 </div>
                 <div class="profile-form-fields">
                     <div class="field-row">

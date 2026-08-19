@@ -7,7 +7,7 @@
 // no injection surface); DB credentials go through MYSQL_PWD so they don't
 // show up in `ps`.
 
-const BACKUP_DATA_SUBFOLDERS = ['avatars', 'exhibit-photos', 'exhibit-documents', 'case-documents'];
+const BACKUP_DATA_SUBFOLDERS = ['avatars', 'exhibit-photos', 'exhibit-documents', 'case-documents', 'produced-items', 'produced-item-receipts'];
 
 // Runs a command with no shell involved. Returns exit code + captured stderr.
 function backup_run(array $cmd, array $env = [], ?string $stdinFile = null, ?string $stdoutFile = null): array

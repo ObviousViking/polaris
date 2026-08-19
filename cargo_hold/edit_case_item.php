@@ -36,6 +36,26 @@ if (!user_can($conn, (int) $_SESSION['user_id'], 'exhibit_edit') && (int) $item[
 $job_id = (int) $item['job_id'];
 $validStatuses = ['Awaiting Review', 'Being Reviewed', 'Reviewed', 'Not Reviewed'];
 
+// File versions for this item, newest first - the current version is
+// simply the highest `version` per item_id (see
+// includes/migrations/022_produced_items.sql).
+$files = [];
+$fileStmt = $conn->prepare("
+    SELECT cif.file_id, cif.version, cif.original_filename, cif.file_size, cif.explainer, cif.uploaded_at,
+           CONCAT(u.first_name, ' ', u.last_name) AS uploaded_by_name
+    FROM case_item_files cif
+    LEFT JOIN users u ON cif.uploaded_by = u.id
+    WHERE cif.item_id = ?
+    ORDER BY cif.version DESC
+");
+$fileStmt->bind_param("i", $item_id);
+$fileStmt->execute();
+$fileResult = $fileStmt->get_result();
+while ($row = $fileResult->fetch_assoc()) {
+    $files[] = $row;
+}
+$fileStmt->close();
+
 $users = [];
 $res = $conn->query("SELECT id, CONCAT(first_name, ' ', last_name) AS full_name FROM users WHERE is_active = 1 ORDER BY first_name, last_name");
 while ($row = $res->fetch_assoc()) {
@@ -97,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'details
     $created_on = $_POST['created_on'] ?: null;
     $assigned_to = !empty($_POST['assigned_to']) ? intval($_POST['assigned_to']) : null;
     $source_exhibit_id = !empty($_POST['source_exhibit_id']) ? intval($_POST['source_exhibit_id']) : null;
+    $file_count = ($_POST['file_count'] ?? '') !== '' ? intval($_POST['file_count']) : null;
 
     $changes = [];
     if ($type_id !== (int) $item['type_id']) {
@@ -133,17 +154,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'details
             'new' => case_item_exhibit_ref($exhibits, $source_exhibit_id),
         ];
     }
+    if ($file_count !== ($item['file_count'] !== null ? (int) $item['file_count'] : null)) {
+        $changes['Number of Files'] = ['old' => $item['file_count'], 'new' => $file_count];
+    }
 
     if (empty($type_id)) {
         $message = "Please select a type.";
     } else {
-        $stmt = $conn->prepare("UPDATE case_items SET type_id = ?, description = ?, notes = ?, status = ?, created_on = ?, assigned_to = ?, source_exhibit_id = ? WHERE item_id = ?");
-        $stmt->bind_param("issssiii", $type_id, $description, $notes, $status, $created_on, $assigned_to, $source_exhibit_id, $item_id);
+        $stmt = $conn->prepare("UPDATE case_items SET type_id = ?, description = ?, notes = ?, status = ?, created_on = ?, assigned_to = ?, source_exhibit_id = ?, file_count = ? WHERE item_id = ?");
+        $stmt->bind_param("issssiiii", $type_id, $description, $notes, $status, $created_on, $assigned_to, $source_exhibit_id, $file_count, $item_id);
         if ($stmt->execute()) {
             if (!empty($changes)) {
                 insert_history_row($conn, 'case_item_history', $item_id, 'UPDATE', (int) $_SESSION['user_id'], json_encode($changes));
             }
-            $message = "Case item updated.";
+            $message = "Produced item updated.";
 
             // Refresh for display below.
             $stmt2 = $conn->prepare("SELECT * FROM case_items WHERE item_id = ?");
@@ -156,33 +180,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'details
         }
         $stmt->close();
     }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'handover') {
-    $handedTo = trim($_POST['handed_to'] ?? '');
-    $handoverDate = $_POST['handover_date'] ?: date('Y-m-d');
+}
 
-    if ($handedTo === '') {
-        $message = "Please enter who the item was handed to.";
-    } else {
-        $handoverAt = $handoverDate . ' ' . date('H:i:s');
-        $stmt = $conn->prepare("UPDATE case_items SET last_handed_to = ?, last_handed_to_at = ? WHERE item_id = ?");
-        $stmt->bind_param("ssi", $handedTo, $handoverAt, $item_id);
-        if ($stmt->execute()) {
-            insert_history_row($conn, 'case_item_history', $item_id, 'HANDOVER', (int) $_SESSION['user_id'], json_encode([
-                'handed_to' => $handedTo,
-                'handover_date' => $handoverDate,
-            ]));
-            $message = "Handover recorded.";
-
-            $stmt2 = $conn->prepare("SELECT * FROM case_items WHERE item_id = ?");
-            $stmt2->bind_param("i", $item_id);
-            $stmt2->execute();
-            $item = $stmt2->get_result()->fetch_assoc();
-            $stmt2->close();
-        } else {
-            $message = "Error recording handover: " . $stmt->error;
-        }
-        $stmt->close();
-    }
+// Flash message from upload_case_item_file.php's redirect back here.
+if (empty($message) && isset($_SESSION['case_item_message'])) {
+    $message = $_SESSION['case_item_message'];
+    unset($_SESSION['case_item_message']);
 }
 
 include '../header.php';
@@ -282,10 +285,37 @@ include '../header.php';
         color: var(--polaris-text-dim);
         margin-bottom: 15px;
     }
+
+    .files-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+        font-size: 14px;
+    }
+
+    .files-table th,
+    .files-table td {
+        border: 1px solid var(--polaris-border);
+        padding: 8px;
+        text-align: left;
+    }
+
+    .files-table th {
+        background: var(--polaris-divider);
+    }
+
+    .version-badge {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: var(--polaris-panel-alt);
+        color: var(--polaris-text-dim);
+        font-size: 12px;
+    }
 </style>
 
 <div class="container">
-    <h2>Edit Case Item: <?php echo htmlspecialchars($item['item_ref']); ?></h2>
+    <h2>Edit Produced Item: <?php echo htmlspecialchars($item['item_ref']); ?></h2>
 
     <?php if (!empty($message)): ?>
     <div class="message"><?php echo htmlspecialchars($message); ?></div>
@@ -323,6 +353,11 @@ include '../header.php';
         <label for="notes">Notes</label>
         <textarea name="notes" id="notes" rows="4"><?php echo htmlspecialchars($item['notes'] ?? ''); ?></textarea>
 
+        <label for="file_count">Number of Files</label>
+        <input type="text" name="file_count" id="file_count" inputmode="numeric" pattern="[0-9]*"
+            value="<?php echo htmlspecialchars($item['file_count'] ?? ''); ?>"
+            placeholder="Not all item types need this - leave blank if not applicable">
+
         <label for="status">Status</label>
         <select name="status" id="status" required>
             <?php foreach ($validStatuses as $statusOption): ?>
@@ -351,26 +386,61 @@ include '../header.php';
         </div>
     </form>
 
-    <h3>Record Handover</h3>
+    <h3>Book Out / Book In</h3>
     <p class="handover-summary">
-        <?php if (!empty($item['last_handed_to'])): ?>
-        Last handed to <strong><?php echo htmlspecialchars($item['last_handed_to']); ?></strong>
-        on <?php echo htmlspecialchars($item['last_handed_to_at']); ?>.
+        <?php if (!empty($item['booked_out_at']) && empty($item['returned_at'])): ?>
+        Currently booked out to <strong><?php echo htmlspecialchars($item['booked_out_to']); ?></strong>
+        on <?php echo htmlspecialchars($item['booked_out_at']); ?>.
+        <?php elseif (!empty($item['booked_out_at'])): ?>
+        Last booked out to <strong><?php echo htmlspecialchars($item['booked_out_to']); ?></strong>
+        on <?php echo htmlspecialchars($item['booked_out_at']); ?>,
+        returned <?php echo htmlspecialchars($item['returned_at']); ?>.
         <?php else: ?>
-        No handover recorded yet.
+        Not currently booked out.
         <?php endif; ?>
         <a href="view_case_item_history.php?item_id=<?php echo $item_id; ?>">View full history</a>
     </p>
-    <form method="post">
-        <input type="hidden" name="form" value="handover">
-        <label for="handed_to">Handed To</label>
-        <input type="text" name="handed_to" id="handed_to" placeholder="Name of person/team the item was given to" required>
+    <div class="btn-group">
+        <a class="back-btn" href="book_out_case_items.php?job_id=<?php echo $job_id; ?>">Book Out</a>
+        <a class="back-btn" href="book_in_case_items.php?job_id=<?php echo $job_id; ?>">Book In</a>
+    </div>
 
-        <label for="handover_date">Date</label>
-        <input type="date" name="handover_date" id="handover_date" value="<?php echo date('Y-m-d'); ?>">
+    <h3>Files</h3>
+    <?php if (!empty($files)): ?>
+    <table class="files-table">
+        <tr>
+            <th>Version</th>
+            <th>Filename</th>
+            <th>Explainer</th>
+            <th>Uploaded By</th>
+            <th>Uploaded At</th>
+            <th></th>
+        </tr>
+        <?php foreach ($files as $i => $f): ?>
+        <tr>
+            <td><span class="version-badge">v<?php echo (int) $f['version']; ?><?php echo $i === 0 ? ' (current)' : ''; ?></span></td>
+            <td><?php echo htmlspecialchars($f['original_filename']); ?></td>
+            <td><?php echo nl2br(htmlspecialchars($f['explainer'] ?? '')); ?></td>
+            <td><?php echo htmlspecialchars($f['uploaded_by_name'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars($f['uploaded_at']); ?></td>
+            <td><a href="download_case_item_file.php?file_id=<?php echo (int) $f['file_id']; ?>">Download</a></td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+    <?php else: ?>
+    <p class="handover-summary">No files uploaded yet.</p>
+    <?php endif; ?>
+    <form method="post" action="upload_case_item_file.php" enctype="multipart/form-data">
+        <input type="hidden" name="item_id" value="<?php echo $item_id; ?>">
+        <input type="hidden" name="job_id" value="<?php echo $job_id; ?>">
+        <label for="item_file"><?php echo empty($files) ? 'Upload File' : 'Upload New Version'; ?></label>
+        <input type="file" name="item_file" id="item_file" required>
+
+        <label for="explainer">Explainer <?php echo empty($files) ? '(optional)' : '(what changed in this version?)'; ?></label>
+        <textarea name="explainer" id="explainer" rows="3"></textarea>
 
         <div class="btn-group">
-            <button type="submit">Record Handover</button>
+            <button type="submit">Upload</button>
         </div>
     </form>
 </div>

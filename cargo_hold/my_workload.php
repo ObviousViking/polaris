@@ -135,7 +135,7 @@ $extractions_result = $extractions_stmt->get_result();
         </table>
     </div>
 
-    <h3 style="margin-top: 30px;">Allocated Case Items</h3>
+    <h3 style="margin-top: 30px;">Allocated Produced Items</h3>
     <div class="table-scroll">
         <table>
             <tr>

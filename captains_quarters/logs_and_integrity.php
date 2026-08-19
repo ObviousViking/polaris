@@ -254,7 +254,7 @@ $recentAuditLog = fetch_audit_log_page($conn, $auditPagination['page'], $auditPa
         </div>
 
         <div class="chain-card <?php echo $caseItemChain['ok'] ? 'chain-ok' : 'chain-bad'; ?>">
-            <h3>Case Item History</h3>
+            <h3>Produced Item History</h3>
             <?php if ($caseItemChain['error']): ?>
             <p class="chain-headline">Error checking chain: <?php echo htmlspecialchars($caseItemChain['error']); ?></p>
             <?php elseif ($caseItemChain['ok']): ?>
@@ -341,7 +341,7 @@ $recentAuditLog = fetch_audit_log_page($conn, $auditPagination['page'], $auditPa
     </div>
     <?php echo render_pagination('exhibit', $exhibitPagination['page'], $exhibitPagination['totalPages'], $exhibitPagination['showAll'], $exhibitPagination['total']); ?>
 
-    <h3 style="margin-top:30px;">Case Item History</h3>
+    <h3 style="margin-top:30px;">Produced Item History</h3>
     <div class="table-scroll">
     <table class="logs-table">
         <thead>

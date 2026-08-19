@@ -172,7 +172,7 @@ include('../header.php');
     </style>
 
     <div class="container">
-        <h2>History for Case Item: <?php echo htmlspecialchars($item_ref); ?></h2>
+        <h2>History for Produced Item: <?php echo htmlspecialchars($item_ref); ?></h2>
 
         <?php if (!empty($historyRecords)): ?>
         <table>

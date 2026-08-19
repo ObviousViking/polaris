@@ -86,6 +86,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['restore_backup'])) {
         }
     }
 }
+
+// Decide which step the wizard should open on. A fresh load always starts at
+// step 1; an error re-opens whichever step it belongs to so the user isn't
+// dropped back at the beginning.
+$openStep = 1;
+$openRestore = false;
+if (isset($error)) {
+    if (isset($_POST['restore_backup'])) {
+        $openRestore = true;
+    } elseif (strpos($error, 'data storage path') !== false) {
+        $openStep = 2;
+    } else {
+        $openStep = 3;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -258,6 +273,120 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['restore_backup'])) {
     input[type="submit"].restore-submit:hover {
         background: var(--polaris-danger);
     }
+
+    .wizard-progress {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+    }
+
+    .wizard-dot {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        min-width: 26px;
+        border-radius: 50%;
+        border: 1px solid var(--polaris-border);
+        color: var(--polaris-text-muted);
+        font-size: 13px;
+    }
+
+    .wizard-dot.is-active {
+        border-color: var(--polaris-success-strong);
+        color: var(--polaris-text);
+        background: var(--polaris-success-strong);
+    }
+
+    .wizard-dot.is-done {
+        border-color: var(--polaris-success-strong);
+        color: var(--polaris-success-strong);
+    }
+
+    .wizard-connector {
+        flex: 1;
+        height: 1px;
+        background: var(--polaris-border);
+        margin: 0 6px;
+        max-width: 40px;
+    }
+
+    .wizard-panel {
+        display: none;
+    }
+
+    .wizard-panel.is-active {
+        display: block;
+    }
+
+    .btn-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .btn-row input[type="submit"],
+    .btn-row button {
+        margin: 0;
+    }
+
+    button.btn-secondary {
+        flex: 0 0 auto;
+        padding: 10px 16px;
+        background: transparent;
+        border: 1px solid var(--polaris-border);
+        border-radius: 4px;
+        color: var(--polaris-text-secondary);
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    button.btn-secondary:hover {
+        background: var(--polaris-divider);
+    }
+
+    .summary-list {
+        list-style: none;
+        margin: 0 0 15px;
+        padding: 0;
+        font-size: 14px;
+    }
+
+    .summary-list li {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--polaris-border);
+    }
+
+    .summary-list li:last-child {
+        border-bottom: none;
+    }
+
+    .summary-label {
+        color: var(--polaris-text-muted);
+    }
+
+    .summary-value {
+        color: var(--polaris-text);
+        text-align: right;
+        word-break: break-all;
+    }
+
+    .restore-toggle {
+        text-align: center;
+        font-size: 13px;
+        margin-top: 10px;
+    }
+
+    .restore-toggle a,
+    .back-to-setup {
+        color: var(--polaris-text-secondary);
+        cursor: pointer;
+    }
     </style>
 </head>
 
@@ -274,60 +403,124 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['restore_backup'])) {
         </div>
         <?php endif; ?>
 
-        <div class="step">
-            <h2>1. Database Connection</h2>
-            <div class="status-line status-ok">&#10003; Connected</div>
-            <div class="status-detail">
-                <?php echo htmlspecialchars($db_user_display); ?>@<?php echo htmlspecialchars($db_host_display); ?>
-                / <?php echo htmlspecialchars($db_name_display); ?>
+        <div id="wizard" data-open-step="<?php echo (int)$openStep; ?>"
+            data-open-restore="<?php echo $openRestore ? '1' : '0'; ?>">
+
+            <div class="wizard-progress" id="wizardProgress">
+                <div class="wizard-dot" data-dot="1">1</div>
+                <div class="wizard-connector"></div>
+                <div class="wizard-dot" data-dot="2">2</div>
+                <div class="wizard-connector"></div>
+                <div class="wizard-dot" data-dot="3">3</div>
+                <div class="wizard-connector"></div>
+                <div class="wizard-dot" data-dot="4">4</div>
             </div>
+
+            <form method="POST" action="" id="setupForm">
+
+                <div class="wizard-panel" data-panel="1">
+                    <div class="step">
+                        <h2>1. Database Connection</h2>
+                        <div class="status-line status-ok">&#10003; Connected</div>
+                        <div class="status-detail">
+                            <?php echo htmlspecialchars($db_user_display); ?>@<?php echo htmlspecialchars($db_host_display); ?>
+                            / <?php echo htmlspecialchars($db_name_display); ?>
+                        </div>
+                    </div>
+                    <div class="btn-row">
+                        <button type="button" class="btn-secondary" data-goto="2" style="flex:1;">Next</button>
+                    </div>
+                    <p class="restore-toggle">Already running Polaris elsewhere?
+                        <a id="showRestore">Restore from an existing backup instead</a>
+                    </p>
+                </div>
+
+                <div class="wizard-panel" data-panel="2">
+                    <div class="step">
+                        <h2>2. Data Storage</h2>
+                        <div class="status-line <?php echo $data_root_writable ? 'status-ok' : 'status-bad'; ?>">
+                            <?php echo $data_root_writable ? '&#10003; Writable' : '&#10007; Not writable'; ?>
+                        </div>
+                        <div class="status-detail">Host path: <?php echo htmlspecialchars($data_host_display); ?></div>
+                        <div class="status-detail">Avatars, exhibit photos, exhibit documents, and produced item
+                            files are stored here (in fixed subfolders). Editable later from Case Management ->
+                            Manage System Details.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="data_root">Data storage root (container path - only change this if you
+                            know what you're doing)</label>
+                        <input type="text" id="data_root" name="data_root"
+                            value="<?php echo htmlspecialchars($data_root); ?>">
+                    </div>
+                    <div class="btn-row">
+                        <button type="button" class="btn-secondary" data-goto="1">Back</button>
+                        <button type="button" class="btn-secondary" data-goto="3" style="flex:1;">Next</button>
+                    </div>
+                </div>
+
+                <div class="wizard-panel" data-panel="3">
+                    <div class="step">
+                        <h2>3. Create Super User</h2>
+                        <p class="info" style="text-align:left;">This account is purely for administrative
+                            purposes and shouldn't be used as your personal account.</p>
+                        <div class="form-group">
+                            <label for="first_name">First Name</label>
+                            <input type="text" id="first_name" name="first_name"
+                                value="<?php echo htmlspecialchars($first_name ?? ''); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="last_name">Last Name</label>
+                            <input type="text" id="last_name" name="last_name"
+                                value="<?php echo htmlspecialchars($last_name ?? ''); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" name="email"
+                                value="<?php echo htmlspecialchars($email ?? ''); ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password" required>
+                        </div>
+                    </div>
+                    <div class="btn-row">
+                        <button type="button" class="btn-secondary" data-goto="2">Back</button>
+                        <button type="button" class="btn-secondary" data-goto="4" style="flex:1;">Next</button>
+                    </div>
+                </div>
+
+                <div class="wizard-panel" data-panel="4">
+                    <div class="step">
+                        <h2>4. Review &amp; Create</h2>
+                        <ul class="summary-list">
+                            <li>
+                                <span class="summary-label">Database</span>
+                                <span class="summary-value"><?php echo htmlspecialchars($db_user_display); ?>@<?php echo htmlspecialchars($db_host_display); ?></span>
+                            </li>
+                            <li>
+                                <span class="summary-label">Storage path</span>
+                                <span class="summary-value" id="summaryDataRoot"></span>
+                            </li>
+                            <li>
+                                <span class="summary-label">Name</span>
+                                <span class="summary-value" id="summaryName"></span>
+                            </li>
+                            <li>
+                                <span class="summary-label">Email</span>
+                                <span class="summary-value" id="summaryEmail"></span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="btn-row">
+                        <button type="button" class="btn-secondary" data-goto="3">Back</button>
+                        <input type="submit" value="Create Super User &amp; Continue">
+                    </div>
+                </div>
+
+            </form>
         </div>
 
-        <div class="step">
-            <h2>2. Data Storage</h2>
-            <div class="status-line <?php echo $data_root_writable ? 'status-ok' : 'status-bad'; ?>">
-                <?php echo $data_root_writable ? '&#10003; Writable' : '&#10007; Not writable'; ?>
-            </div>
-            <div class="status-detail">Host path: <?php echo htmlspecialchars($data_host_display); ?></div>
-            <div class="status-detail">Avatars, exhibit photos, and exhibit documents are stored here
-                (in fixed subfolders). Editable later from Case Management -> Manage System Details.</div>
-        </div>
-
-        <form method="POST" action="">
-            <div class="form-group">
-                <label for="data_root">Data storage root (container path - only change this if you
-                    know what you're doing)</label>
-                <input type="text" id="data_root" name="data_root"
-                    value="<?php echo htmlspecialchars($data_root); ?>">
-            </div>
-
-            <div class="step" style="margin-top: 25px;">
-                <h2>3. Create Super User</h2>
-                <p class="info" style="text-align:left;">This account is purely for administrative
-                    purposes and shouldn't be used as your personal account.</p>
-                <div class="form-group">
-                    <label for="first_name">First Name</label>
-                    <input type="text" id="first_name" name="first_name" required>
-                </div>
-                <div class="form-group">
-                    <label for="last_name">Last Name</label>
-                    <input type="text" id="last_name" name="last_name" required>
-                </div>
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
-                </div>
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <input type="submit" value="Create Super User &amp; Continue">
-            </div>
-        </form>
-
-        <div class="setup-divider"><span>OR</span></div>
-
-        <form method="POST" action="" enctype="multipart/form-data"
+        <form method="POST" action="" enctype="multipart/form-data" id="restoreForm" style="display:none;"
             onsubmit="return confirm('This will replace the empty database that was just created with everything in the backup you upload. Are you sure?');">
             <div class="step">
                 <h2>Restore from an Existing Backup</h2>
@@ -342,10 +535,93 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['restore_backup'])) {
                     <label for="confirm_phrase">Type RESTORE to confirm</label>
                     <input type="text" name="confirm_phrase" id="confirm_phrase" autocomplete="off" required>
                 </div>
-                <input type="submit" name="restore_backup" value="Restore from Backup" class="restore-submit">
+                <div class="btn-row">
+                    <input type="submit" name="restore_backup" value="Restore from Backup" class="restore-submit">
+                </div>
+                <p class="restore-toggle"><a class="back-to-setup" id="hideRestore">&larr; Back to setup</a></p>
             </div>
         </form>
     </div>
+
+    <script>
+    (function() {
+        var wizard = document.getElementById('wizard');
+        var panels = wizard.querySelectorAll('.wizard-panel');
+        var dots = wizard.querySelectorAll('.wizard-dot');
+        var restoreForm = document.getElementById('restoreForm');
+        var showRestore = document.getElementById('showRestore');
+        var hideRestore = document.getElementById('hideRestore');
+
+        function showPanel(step) {
+            panels.forEach(function(panel) {
+                panel.classList.toggle('is-active', panel.getAttribute('data-panel') === String(step));
+            });
+            dots.forEach(function(dot) {
+                var dotStep = parseInt(dot.getAttribute('data-dot'), 10);
+                dot.classList.toggle('is-active', dotStep === step);
+                dot.classList.toggle('is-done', dotStep < step);
+            });
+            if (step === 4) {
+                populateSummary();
+            }
+        }
+
+        function populateSummary() {
+            var dataRoot = document.getElementById('data_root').value;
+            var firstName = document.getElementById('first_name').value;
+            var lastName = document.getElementById('last_name').value;
+            var email = document.getElementById('email').value;
+            document.getElementById('summaryDataRoot').textContent = dataRoot;
+            document.getElementById('summaryName').textContent = (firstName + ' ' + lastName).trim();
+            document.getElementById('summaryEmail').textContent = email;
+        }
+
+        function validatePanel(step) {
+            var panel = wizard.querySelector('.wizard-panel[data-panel="' + step + '"]');
+            var fields = panel.querySelectorAll('input[required]');
+            for (var i = 0; i < fields.length; i++) {
+                if (!fields[i].reportValidity()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        wizard.querySelectorAll('[data-goto]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var current = wizard.querySelector('.wizard-panel.is-active').getAttribute('data-panel');
+                var target = parseInt(btn.getAttribute('data-goto'), 10);
+                // Only validate when moving forward off the current panel.
+                if (target > parseInt(current, 10) && !validatePanel(current)) {
+                    return;
+                }
+                showPanel(target);
+            });
+        });
+
+        function openRestore() {
+            wizard.style.display = 'none';
+            restoreForm.style.display = 'block';
+        }
+
+        function closeRestore() {
+            wizard.style.display = 'block';
+            restoreForm.style.display = 'none';
+            showPanel(1);
+        }
+
+        showRestore.addEventListener('click', openRestore);
+        hideRestore.addEventListener('click', closeRestore);
+
+        var openStep = parseInt(wizard.getAttribute('data-open-step'), 10) || 1;
+        var openRestoreFlag = wizard.getAttribute('data-open-restore') === '1';
+        if (openRestoreFlag) {
+            openRestore();
+        } else {
+            showPanel(openStep);
+        }
+    })();
+    </script>
 </body>
 
 </html>
