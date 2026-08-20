@@ -115,6 +115,8 @@ if ($embedded) {
                 <span class="icon">📁</span> Case Types</a>
             <a href="manage_case_item_types.php<?php echo $embedded ? '?embedded=1' : ''; ?>" class="detail-card">
                 <span class="icon">📦</span> Produced Item Types</a>
+            <a href="/spaceport/manage_contacts.php" class="detail-card">
+                <span class="icon">👤</span> External Contacts</a>
         </div>
         <?php if (!$embedded): ?>
         <br>

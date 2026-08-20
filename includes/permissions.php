@@ -54,6 +54,12 @@ const PERMISSION_DEFINITIONS = [
     ['key' => 'view_logs_integrity', 'label' => 'View Logs & Integrity', 'description' => 'View system activity logs and run integrity checks.', 'category' => 'System Administration', 'sort_order' => 85],
     ['key' => 'view_reports', 'label' => 'View System Reports', 'description' => 'View the system-wide reporting dashboard.', 'category' => 'System Administration', 'sort_order' => 86],
     ['key' => 'manage_metadata_pool', 'label' => 'Manage Metadata Pool', 'description' => 'Define the shared exhibit metadata fields (make, model, serial, IMEI, etc.) available to Process Builder.', 'category' => 'System Administration', 'sort_order' => 87],
+
+    // Spaceport (submissions portal)
+    ['key' => 'submission_create', 'label' => 'Submit Cases', 'description' => 'File a new case submission via Spaceport.', 'category' => 'Case Submissions', 'sort_order' => 90],
+    ['key' => 'submission_view_own', 'label' => 'View Own Submissions', 'description' => 'Check the status/history of submissions filed by this user.', 'category' => 'Case Submissions', 'sort_order' => 91],
+    ['key' => 'submission_review', 'label' => 'Review Submissions', 'description' => 'Approve, reject, or request more information on a submission.', 'category' => 'Case Submissions', 'sort_order' => 92],
+    ['key' => 'manage_submission_questions', 'label' => 'Manage Submission Questions', 'description' => 'Define the admin-configurable extra questions shown on the submission form.', 'category' => 'Case Submissions', 'sort_order' => 93],
 ];
 
 // Permissions the 'user' role gets by default - everything that's not

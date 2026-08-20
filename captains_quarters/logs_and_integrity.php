@@ -27,6 +27,7 @@ $exhibitChain = verify_history_chain($conn, 'exhibit_history');
 $auditChain = verify_history_chain($conn, 'audit_log');
 $processChain = verify_history_chain($conn, 'exhibit_process_history');
 $caseItemChain = verify_history_chain($conn, 'case_item_history');
+$submissionChain = verify_history_chain($conn, 'submission_history');
 
 const LOGS_PAGE_SIZE = 25;
 
@@ -265,6 +266,21 @@ $recentAuditLog = fetch_audit_log_page($conn, $auditPagination['page'], $auditPa
                 <?php echo htmlspecialchars(implode(', ', $caseItemChain['broken_hash']) ?: 'none'); ?></p>
             <p class="chain-detail">HMAC broken at record(s):
                 <?php echo htmlspecialchars(implode(', ', $caseItemChain['broken_hmac']) ?: 'none'); ?></p>
+            <?php endif; ?>
+        </div>
+
+        <div class="chain-card <?php echo $submissionChain['ok'] ? 'chain-ok' : 'chain-bad'; ?>">
+            <h3>Case Submission History</h3>
+            <?php if ($submissionChain['error']): ?>
+            <p class="chain-headline">Error checking chain: <?php echo htmlspecialchars($submissionChain['error']); ?></p>
+            <?php elseif ($submissionChain['ok']): ?>
+            <p class="chain-headline">&#10003; All <?php echo (int) $submissionChain['total']; ?> records verified</p>
+            <?php else: ?>
+            <p class="chain-headline">&#10007; Tampering detected</p>
+            <p class="chain-detail">Hash chain broken at record(s):
+                <?php echo htmlspecialchars(implode(', ', $submissionChain['broken_hash']) ?: 'none'); ?></p>
+            <p class="chain-detail">HMAC broken at record(s):
+                <?php echo htmlspecialchars(implode(', ', $submissionChain['broken_hmac']) ?: 'none'); ?></p>
             <?php endif; ?>
         </div>
     </div>

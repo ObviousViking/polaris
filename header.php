@@ -6,6 +6,7 @@ if (session_status() == PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/includes/settings.php';
+require_once __DIR__ . '/includes/permissions.php';
 
 if (!isset($config)) {
 $config = get_storage_settings($conn);
@@ -40,6 +41,15 @@ if ($notif_row = mysqli_fetch_assoc($notif_query)) {
 $unread_count = $notif_row['unread'];
 }
 }
+
+// A portal account (e.g. Submitting Officer) only ever has Spaceport
+// permissions, never general case access - it gets a stripped-down nav
+// scoped to submitting/checking cases, not the full staff menu it can't use
+// anyway. Any user with real case_view access always sees the full nav,
+// regardless of role name.
+$isPortalUser = isset($_SESSION['user_id'])
+    && !user_can($conn, (int) $_SESSION['user_id'], 'case_view')
+    && (user_can($conn, (int) $_SESSION['user_id'], 'submission_create') || user_can($conn, (int) $_SESSION['user_id'], 'submission_view_own'));
 ?>
 <!DOCTYPE html>
 <html<?php echo $userTheme === 'light' ? ' data-theme="light"' : ''; ?>>
@@ -198,11 +208,17 @@ $unread_count = $notif_row['unread'];
     </header>
 
     <nav>
+        <?php if ($isPortalUser): ?>
+        <a href="/spaceport/spaceport_dashboard.php">Case Submissions</a>
+        <a href="/user_profile.php">User Profile</a>
+        <?php else: ?>
         <a href="/cargo_hold/ch_dashboard.php">Case Management</a>
         <a href="/captains_quarters/cq_dashboard.php">System Management</a>
         <a href="/logisticshub/lh_dashboard.php">Asset Management</a>
+        <a href="/spaceport/spaceport_dashboard.php">Case Submissions</a>
         <a href="/user_profile.php">User Profile</a>
         <a href="/about.php">About</a>
+        <?php endif; ?>
     </nav>
 
     <script>

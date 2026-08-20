@@ -568,7 +568,7 @@ include('../header.php');
             <div style="text-align: center; margin-top: 20px;">
                 <button type="submit">Save Changes</button>
                 <button type="button" class="cancel-btn"
-                    onclick="history.back();">Cancel</button>
+                    onclick="window.location.href='job.php?job_id=<?php echo $job_id; ?>'">Cancel</button>
                 <button type="button" class="cancel-btn"
                     onclick="window.location.href='view_exhibit_history.php?exhibit_id=<?php echo $exhibit_id; ?>'">
                     View History

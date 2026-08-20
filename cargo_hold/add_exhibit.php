@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $urgencies = $_POST['urgency'];
     $bag_numbers = $_POST['bag_number'];
     $locations_arr = $_POST['location'];
-    
+
     // Retrieve the common Delivered By value
     $delivered_by = trim($_POST['delivered_by']);
     
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $message = "Please fill in the required fields (Exhibit Type, Exhibit Ref, Location, Delivered By) for exhibit " . ($i + 1) . ".";
                     break;
                 }
-                
+
                 // Validate lengths
                 if (strlen($exhibit_ref_val) > 50 || strlen($bag_number_val) > 50 || strlen($item_desc_val) > 255) {
                     $allSuccess = false;
@@ -354,6 +354,12 @@ include '../header.php';
         background-color: var(--polaris-error-bg);
         color: var(--polaris-error-text);
     }
+
+    .section-hint {
+        font-size: 13px;
+        color: var(--polaris-text-dim);
+        margin: -10px 0 15px;
+    }
     </style>
     <script>
     function addExhibitRow() {
@@ -463,6 +469,8 @@ include '../header.php';
             }
         };
         cell7.appendChild(removeBtn);
+
+        return row;
     }
     </script>
 
@@ -473,6 +481,11 @@ include '../header.php';
             <?php echo htmlspecialchars($message); ?>
         </p>
         <?php endif; ?>
+
+        <p class="section-hint">Only for brand-new exhibits with nothing declared in advance. An exhibit
+            expected via a case submission shows on the case page and books in from
+            <a href="book_in_exhibits.php?job_id=<?php echo $job_id; ?>">Book In Exhibits</a> instead.</p>
+
         <form method="post" action="add_exhibit.php?job_id=<?php echo $job_id; ?>">
             <table id="exhibitsTable">
                 <tr>

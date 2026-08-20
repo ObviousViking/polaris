@@ -21,6 +21,8 @@ $job_id = intval($_GET['job_id']);
 $pageError = "";
 if (($_GET['error'] ?? '') === 'reason_required') {
     $pageError = "That deletion was not completed - a reason is required (System Management > System Settings > Require a reason for every deletion).";
+} elseif (($_GET['error'] ?? '') === 'photo_upload_failed') {
+    $pageError = "The subject photo could not be uploaded - it may not be a valid image, or the server could not save it. Try again or contact an administrator if this keeps happening.";
 }
 
 // Only users with exhibit_delete may delete or restore exhibits.
@@ -42,8 +44,10 @@ $stmt = $conn->prepare("
         j.malware, 
         j.status_id, 
         j.strategy_set, 
-        j.strategy_due, 
+        j.strategy_due,
         j.case_type_id,
+        j.incident_number,
+        j.external_reference,
         ct.type_name AS case_type,
         op.operation_name AS operation_name,
         st.status_name AS status_name
@@ -69,9 +73,11 @@ $stmt->bind_result(
     $malware, 
     $status_id, 
     $strategy_set, 
-    $strategy_due, 
-    $case_type_id, 
-    $case_type, 
+    $strategy_due,
+    $case_type_id,
+    $incident_number,
+    $external_reference,
+    $case_type,
     $operation_name, 
     $status_name
 );
@@ -81,6 +87,15 @@ if (!$stmt->fetch()) {
     exit();
 }
 $stmt->close();
+
+// If this case originated as a Spaceport submission, link back to it.
+$originSubmissionId = null;
+$subStmt = $conn->prepare("SELECT submission_id FROM submissions WHERE job_id = ?");
+$subStmt->bind_param("i", $job_id);
+$subStmt->execute();
+$subStmt->bind_result($originSubmissionId);
+$subStmt->fetch();
+$subStmt->close();
 
 // Fetch exhibits for this job with location name, exhibit type, and allocated user name.
 $exhibits = [];
@@ -102,7 +117,7 @@ $stmtEx = $conn->prepare("
     JOIN exhibit_locations el ON e.location_id = el.location_id
     LEFT JOIN users u ON e.allocated_to = u.id
     WHERE e.job_id = ? AND e.deleted_at IS NULL AND e.parent_id IS NULL
-    ORDER BY e.time_in DESC
+    ORDER BY e.exhibit_ref ASC
 ");
 $stmtEx->bind_param("i", $job_id);
 $stmtEx->execute();
@@ -127,6 +142,49 @@ $stmtEx->close();
 // Any saved book-in/book-out receipts covering these exhibits, for the
 // "View Receipt" links in the table below.
 $receiptsByExhibit = get_receipts_for_exhibits($conn, array_column($exhibits, 'exhibit_id'));
+
+// Exhibits declared at submission time but not yet physically arrived -
+// shown in the same list with a "Not Arrived" status, rather than a
+// separate summary elsewhere, so this is the one place staff check.
+if ($originSubmissionId) {
+    $stmtDeclared = $conn->prepare("
+        SELECT se.submitted_exhibit_id, se.exhibit_ref, se.description, se.bag_number, et.type_name
+        FROM submitted_exhibits se
+        LEFT JOIN exhibit_types et ON se.exhibit_type_id = et.exhibit_type_id
+        WHERE se.submission_id = ? AND se.reconcile_status != 'Received'
+        ORDER BY se.submitted_exhibit_id
+    ");
+    $stmtDeclared->bind_param("i", $originSubmissionId);
+    $stmtDeclared->execute();
+    $resultDeclared = $stmtDeclared->get_result();
+    while ($row = $resultDeclared->fetch_assoc()) {
+        $exhibits[] = [
+            'exhibit_id'           => null,
+            'submitted_exhibit_id' => $row['submitted_exhibit_id'],
+            'is_declared'          => true,
+            'exhibit_ref'          => $row['exhibit_ref'] ?: '(ref not yet assigned)',
+            'item_description'     => $row['description'] ?? '',
+            'exhibit_type'         => $row['type_name'] ?? '',
+            'urgency'              => '',
+            'status'               => 'Not Arrived',
+            'time_in'              => '',
+            'time_out'             => '',
+            'allocated_to'         => null,
+            'allocated_to_name'    => '',
+            // Deliberately not the seizing location (see submitted_exhibits.seizing_location) -
+            // that's where it was seized, not a lab storage location, and this
+            // column is used to show the latter for real exhibits. It's not
+            // in the store yet, so it has no storage location at all.
+            'location_name'        => '',
+        ];
+    }
+    $stmtDeclared->close();
+}
+
+// One combined sort, ref ascending, now that not-yet-arrived items are
+// merged in too - a natural-order compare so "...-2" doesn't sort after
+// "...-10" the way a plain string comparison would.
+usort($exhibits, fn($a, $b) => strnatcmp($a['exhibit_ref'], $b['exhibit_ref']));
 
 // Deleted exhibits (admins only), shown separately from the working list.
 $deletedExhibits = [];
@@ -515,6 +573,23 @@ include '../header.php';
         background: var(--polaris-divider);
     }
 
+    .exhibit-not-arrived td {
+        background: color-mix(in srgb, var(--polaris-warning) 12%, transparent);
+    }
+
+    .status-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .status-not-arrived {
+        background: var(--polaris-warning);
+        color: #1a1a1a;
+    }
+
     /* Produced Items Section */
     .full-section {
         background: var(--polaris-surface);
@@ -747,9 +822,27 @@ include '../header.php';
         <div class="sidebar-box">
             <h3>Case Details</h3>
             <div class="detail-item">
-                <strong>Custom Ref:</strong><br>
+                <strong>Case Ref:</strong><br>
                 <?php echo htmlspecialchars($custom_ref ?? ''); ?>
             </div>
+            <?php if (!empty($incident_number)): ?>
+            <div class="detail-item">
+                <strong>Incident Number:</strong><br>
+                <?php echo htmlspecialchars($incident_number); ?>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($external_reference)): ?>
+            <div class="detail-item">
+                <strong>External Reference:</strong><br>
+                <?php echo htmlspecialchars($external_reference); ?>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($originSubmissionId)): ?>
+            <div class="detail-item">
+                <strong>Origin:</strong><br>
+                <a href="/spaceport/view_submission.php?submission_id=<?php echo (int) $originSubmissionId; ?>">View Case Submission</a>
+            </div>
+            <?php endif; ?>
             <div class="detail-item">
                 <strong>Date/Time:</strong><br>
                 <?php echo htmlspecialchars($date_time ?? ''); ?>
@@ -771,14 +864,6 @@ include '../header.php';
                 <?php echo htmlspecialchars($status_name ?? ''); ?>
             </div>
             <div class="detail-item">
-                <strong>Strategy Set:</strong><br>
-                <?php echo htmlspecialchars($strategy_set ?? ''); ?>
-            </div>
-            <div class="detail-item">
-                <strong>Strategy Due:</strong><br>
-                <?php echo htmlspecialchars($strategy_due ?? ''); ?>
-            </div>
-            <div class="detail-item">
                 <strong>Fingerprints:</strong><br>
                 <?php echo $fingerprints ? "<span style='font-weight:bold; color:var(--polaris-danger);'>Concern</span>" : "None"; ?>
             </div>
@@ -794,7 +879,7 @@ include '../header.php';
             <div class="detail-item">
                 <?php echo nl2br(htmlspecialchars($initial_summary ?? '')); ?>
             </div>
-            <a class="edit-button" href="edit_job.php?job_id=<?php echo $job_id; ?>">Edit Case</a>
+            <a class="edit-button" href="edit_job.php?job_id=<?php echo $job_id; ?>">View Full Details</a>
             <a class="edit-button" href="case_report.php?job_id=<?php echo $job_id; ?>" target="_top"
                 style="margin-left:8px;">Case Report</a>
         </div>
@@ -859,36 +944,51 @@ include '../header.php';
                         <?php endif; ?>
                     </tr>
                     <?php foreach ($exhibits as $ex): ?>
-                    <tr>
+                    <?php $isDeclared = !empty($ex['is_declared']); ?>
+                    <tr<?php echo $isDeclared ? ' class="exhibit-not-arrived"' : ''; ?>>
                         <td>
+                            <?php if ($isDeclared): ?>
+                            <?= htmlspecialchars($ex['exhibit_ref']); ?>
+                            <?php else: ?>
                             <a href="edit_exhibit.php?exhibit_id=<?= $ex['exhibit_id']; ?>">
                                 <?= htmlspecialchars($ex['exhibit_ref']); ?>
                             </a>
+                            <?php endif; ?>
                         </td>
                         <td><?= htmlspecialchars($ex['item_description']); ?></td>
                         <td><?= htmlspecialchars($ex['exhibit_type']); ?></td>
                         <td><?= htmlspecialchars($ex['urgency']); ?></td>
-                        <td><?= htmlspecialchars($ex['status']); ?></td>
+                        <td>
+                            <?php if ($isDeclared): ?>
+                            <span class="status-pill status-not-arrived">Not Arrived</span>
+                            <?php else: ?>
+                            <?= htmlspecialchars($ex['status']); ?>
+                            <?php endif; ?>
+                        </td>
                         <td><?= htmlspecialchars($ex['time_in']); ?></td>
                         <td><?= htmlspecialchars($ex['time_out'] ?: $ex['location_name']); ?></td>
                         <td><?= htmlspecialchars($ex['allocated_to_name']); ?></td>
                         <td>
+                            <?php if (!$isDeclared): ?>
                             <a class="btn btn-small"
                                 href="/captains_log/examination.php?exhibit_id=<?= $ex['exhibit_id']; ?>">Examine</a>
+                            <?php endif; ?>
                         </td>
                         <td>
-                            <?php if (!empty($receiptsByExhibit[$ex['exhibit_id']])): ?>
+                            <?php if (!$isDeclared && !empty($receiptsByExhibit[$ex['exhibit_id']])): ?>
                             <a class="btn btn-small"
                                 href="view_exhibit_receipts.php?exhibit_id=<?= $ex['exhibit_id']; ?>">View</a>
                             <?php endif; ?>
                         </td>
                         <?php if ($canDeleteExhibits): ?>
                         <td>
+                            <?php if (!$isDeclared): ?>
                             <form method="post" action="delete_exhibit.php" style="display:inline;"
                                 onsubmit="return confirmDeleteWithReason(this, 'Delete exhibit <?= htmlspecialchars(addslashes($ex['exhibit_ref'])); ?>? It will be hidden from active views but kept in the audit trail, and can be restored later.');">
                                 <input type="hidden" name="exhibit_id" value="<?= $ex['exhibit_id']; ?>">
                                 <button type="submit" class="btn btn-small" style="background:var(--polaris-error-bg);">Delete</button>
                             </form>
+                            <?php endif; ?>
                         </td>
                         <?php endif; ?>
                     </tr>

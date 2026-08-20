@@ -50,6 +50,11 @@ const HISTORY_CHAIN_TABLES = [
         'ref_col' => 'exhibit_id',
         'fields' => ['exhibit_id', 'action', 'changed_by', 'changed_at', 'changes'],
     ],
+    'submission_history' => [
+        'id_col' => 'history_id',
+        'ref_col' => 'submission_id',
+        'fields' => ['submission_id', 'action', 'changed_by', 'changed_at', 'changes'],
+    ],
 ];
 
 // $changedAt defaults to now; pass it explicitly only when backfilling
